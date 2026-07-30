@@ -603,106 +603,104 @@ struct BLEDeviceView: View {
     @EnvironmentObject var bleVM: BLEViewModel
     
     var body: some View {
-            NavigationStack {
-                List {
-                    Section {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                Circle()
-                                    .fill(bleVM.bleState.isConnected ? Color.blue.opacity(0.15) : Color.gray.opacity(0.15))
-                                    .frame(width: 48, height: 48)
-                                Image(systemName: "antenna.radiowaves.left.and.right")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(bleVM.bleState.isConnected ? .blue : .gray)
-                            }
+        NavigationStack {
+            List {
+                Section {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(bleVM.bleState.isConnected ? Color.blue.opacity(0.15) : Color.gray.opacity(0.15))
+                                .frame(width: 48, height: 48)
+                            Image(systemName: "antenna.radiowaves.left.and.right")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(bleVM.bleState.isConnected ? .blue : .gray)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("ClipIt Button").font(.system(size: 15, weight: .semibold))
+                            Text(bleVM.bleState.label).font(.caption).foregroundColor(.secondary)
+                        }
+                        
+                        if bleVM.bleState.isConnected {
+                            Spacer()
                             
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("ClipIt Button").font(.system(size: 15, weight: .semibold))
-                                Text(bleVM.bleState.label).font(.caption).foregroundColor(.secondary)
-                            }
-                            
-                            if bleVM.bleState.isConnected {
-                                Spacer()
-                                
-                                // 🌟 Perfectly vertically aligned on the right hand side
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    Text("Connected")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(.green)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color.green.opacity(0.12))
-                                        .clipShape(Capsule())
+                            if let batteryLevel = bleVM.remoteBatteryLevel {
+                                HStack(spacing: 4) {
+                                    Text("\(batteryLevel)%")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.secondary)
                                     
-                                    if let batteryLevel = bleVM.remoteBatteryLevel {
-                                        HStack(spacing: 4) {
-                                            Text("\(batteryLevel)%")
-                                                .font(.system(size: 13, weight: .semibold))
-                                                .foregroundColor(.secondary)
-                                            
-                                            Image(systemName: getBatteryIcon(for: batteryLevel))
-                                                .font(.system(size: 14))
-                                                .foregroundColor(getBatteryColor(for: batteryLevel))
-                                        }
-                                    }
+                                    Image(systemName: getBatteryIcon(for: batteryLevel))
+                                        .font(.system(size: 15))
+                                        .foregroundColor(getBatteryColor(for: batteryLevel))
                                 }
+                            } else {
+                                Text("Connected")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.green)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.green.opacity(0.12))
+                                    .clipShape(Capsule())
                             }
                         }
-                        .padding(.vertical, 6)
                     }
-                    
-                    Section {
-                        Button(action: { bleVM.startScanning() }) {
+                    .padding(.vertical, 6)
+                }
+                
+                Section {
+                    Button(action: { bleVM.startScanning() }) {
+                        HStack {
+                            Spacer()
+                            Text("Scan Nearby Devices").font(.system(size: 15, weight: .semibold))
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .contentShape(Rectangle())
+                }
+                
+                if !bleVM.discoveredDevices.isEmpty {
+                    Section("Nearby devices") {
+                        ForEach(bleVM.discoveredDevices) { device in
                             HStack {
-                                Spacer()
-                                Text("Scan Nearby Devices").font(.system(size: 15, weight: .semibold))
-                                Spacer()
-                            }
-                        }
-                        .buttonStyle(.borderless)
-                        .contentShape(Rectangle())
-                    }
-                    
-                    if !bleVM.discoveredDevices.isEmpty {
-                        Section("Nearby devices") {
-                            ForEach(bleVM.discoveredDevices) { device in
-                                HStack {
-                                    Image(systemName: "memorychip").foregroundColor(.blue).frame(width: 32)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(device.name).font(.system(size: 14, weight: .semibold))
-                                        Text("\(device.rssi) dBm").font(.caption).foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                    Button("Connect") { bleVM.connect(to: device) }
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundColor(.blue)
+                                Image(systemName: "memorychip").foregroundColor(.blue).frame(width: 32)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(device.name).font(.system(size: 14, weight: .semibold))
+                                    Text("\(device.rssi) dBm").font(.caption).foregroundColor(.secondary)
                                 }
+                                Spacer()
+                                Button("Connect") { bleVM.connect(to: device) }
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.blue)
                             }
                         }
-                    }
-                    
-                    Section("Connection settings") {
-                        Toggle("Auto-reconnect", isOn: $bleVM.autoReconnect)
                     }
                 }
-                .navigationTitle("ClipIt Button")
+                
+                Section("Connection settings") {
+                    Toggle("Auto-reconnect", isOn: $bleVM.autoReconnect)
+                }
             }
+            .navigationTitle("ClipIt Button")
         }
+    }
     
     private func getBatteryColor(for level: Int) -> Color {
         switch level {
-        case ...20:   return .red     // Under 20% turns critical Red
-        default:      return .primary   // White in Dark Mode, Black in Light
+        case ...20:  return .red
+        case 21...50: return .orange
+        default:      return .green
         }
     }
-
+    
     private func getBatteryIcon(for level: Int) -> String {
         switch level {
-        case ...10:   return "battery.0"
-        case 11...35: return "battery.25"
-        case 36...65: return "battery.50"
-        case 66...85: return "battery.75"
-        default:      return "battery.100"
+        case ...10:   return "battery.0percent"
+        case 11...35:  return "battery.25percent"
+        case 36...65:  return "battery.50percent"
+        case 66...85:  return "battery.75percent"
+        default:       return "battery.100percent"
         }
     }
 }
@@ -831,36 +829,18 @@ private struct TimelineBar: View {
 
 struct SettingsView: View {
     @EnvironmentObject var recordingVM: RecordingViewModel
-    @EnvironmentObject var supabaseService: SupabaseService
-    @AppStorage("dimScreenDuringRecording") private var dimScreenDuringRecording = false
-    @State private var accountEmail = ""
-    @State private var authMessage: String?
-    @State private var isSendingMagicLink = false
-    
-    private var cloudStatusText: String {
-        if !supabaseService.isConfigured {
-            return "Not configured"
-        }
-        if supabaseService.isSyncing {
-            return "Syncing…"
-        }
-        if supabaseService.isSignedIn {
-            return "Connected"
-        }
-        return "Connecting…"
-    }
     
     var body: some View {
         NavigationStack {
             List {
                 Section("Recording") {
-                    SettingsRow(icon: "timer", color: .blue, label: "Before ClipIt") {
+                    SettingsRow(icon: "timer", color: .orange, label: "Before ClipIt") {
                         Stepper("\(recordingVM.bufferLengthSeconds)s",
                                 value: $recordingVM.bufferLengthSeconds, in: 5...60, step: 5)
                         .font(.system(size: 14))
                     }
                     
-                    SettingsRow(icon: "video.fill", color: .green, label: "Video Quality") {
+                    SettingsRow(icon: "video.fill", color: .blue, label: "Video Quality") {
                         // ✅ Clean, direct binding to your new main view model state property
                         Picker("", selection: $recordingVM.selectedVideoQuality) {
                             ForEach(CameraManager.VideoQuality.allCases) { quality in
@@ -876,15 +856,10 @@ struct SettingsView: View {
                         .font(.system(size: 14))
                     }
                     
-                    SettingsRow(icon: "timer", color: .red, label: "After ClipIt") {
+                    SettingsRow(icon: "clock", color: .green, label: "After ClipIt") {
                         Stepper("\(recordingVM.postRollSeconds)s",
                                 value: $recordingVM.postRollSeconds, in: 0...60, step: 5)
                         .font(.system(size: 14))
-                    }
-                    
-                    SettingsRow(icon: "sun.min.fill", color: .orange, label: "Dim Screen While Recording") {
-                        Toggle("", isOn: $dimScreenDuringRecording)
-                            .labelsHidden()
                     }
                 }
                 
@@ -896,60 +871,25 @@ struct SettingsView: View {
                     }
                 }
                 
+                Section("Account") {
+                    SettingsRow(icon: "star.fill", color: .purple, label: "Subscription") {
+                        Text("Free").foregroundColor(.secondary).font(.system(size: 14))
+                    }
+                    SettingsRow(icon: "cloud.fill", color: .gray, label: "Cloud Storage") {
+                        Text("Coming soon...").foregroundColor(.secondary).font(.system(size: 14))
+                    }
+                }
+                
                 Section("Storage") {
-                    SettingsRow(icon: "internaldrive.fill", color: .gray, label: "Total Storage Used") {
+                    SettingsRow(icon: "internaldrive.fill", color: .gray, label: "Clips Storage Used") {
                         Text(recordingVM.localStoreSize)
                             .foregroundColor(.secondary)
                             .font(.system(size: 14))
                     }
                 }
                 
-                Section("Account") {
-                    SettingsRow(icon: "star.fill", color: .purple, label: "Subscription") {
-                        Text("Free").foregroundColor(.secondary).font(.system(size: 14))
-                    }
-                    SettingsRow(icon: "cloud.fill", color: .gray, label: "Cloud Storage") {
-                        Text(cloudStatusText)
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 14))
-                    }
-                    
-                    if supabaseService.isConfigured {
-                        if let email = supabaseService.currentUserEmail {
-                            SettingsRow(icon: "person.fill", color: .blue, label: "Signed in as") {
-                                Text(email).foregroundColor(.secondary).font(.system(size: 14))
-                            }
-                        }
-                        
-                        if supabaseService.isSignedIn {
-                            Button("Sign Out", role: .destructive) {
-                                Task {
-                                    try? await supabaseService.signOut()
-                                    authMessage = nil
-                                }
-                            }
-                        }
-                        
-                        if let authMessage {
-                            Text(authMessage)
-                                .font(.footnote)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        if let syncError = supabaseService.lastSyncError {
-                            Text(syncError)
-                                .font(.footnote)
-                                .foregroundColor(.red)
-                        }
-                    } else {
-                        Text("Copy Secrets.plist.example to Secrets.plist and add your Supabase project URL and anon key.")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
                 Section {
-                    Text("2026 ClipIt LLC • Version 1.3")
+                    Label("2026 ClipIt LLC • Version 1.3", systemImage: "c.circle")
                         .font(.footnote)
                         .foregroundColor(.gray)
                 }

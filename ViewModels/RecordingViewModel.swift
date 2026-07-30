@@ -36,10 +36,6 @@ final class RecordingViewModel: ObservableObject {
     @Published var isExtractingHighlights: Bool = false
     @Published var showAutomaticImportPrompt: Bool = false
     
-    // To delete full recording or not after finishing
-    @Published var showStorageChoicePrompt: Bool = false
-    private var sessionURLToDeleteLater: URL?
-    
     // ADD THIS FUNCTION TO UPDATE BOTH PLACES RESPONSIBLY
     func updateVideoQuality(to newQuality: CameraManager.VideoQuality) {
         self.selectedVideoQuality = newQuality
@@ -48,17 +44,9 @@ final class RecordingViewModel: ObservableObject {
     
     // MARK: - Computed Properties
     var elapsedLabel: String {
-        let hours = Int(elapsedTime) / 3600
-        let minutes = (Int(elapsedTime) % 3600) / 60
+        let minutes = Int(elapsedTime) / 60
         let seconds = Int(elapsedTime) % 60
-        
-        if hours > 0 {
-            // Formats as H:MM:SS when it hits an hour (e.g., 1:00:01)
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            // Keeps your clean format for under an hour (e.g., 05:42)
-            return String(format: "%02d:%02d", minutes, seconds)
-        }
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 
     
@@ -119,10 +107,6 @@ final class RecordingViewModel: ObservableObject {
                 guard let self = self else { return }
                 self.sessionStart = Date()
                 self.startTimer()
-                
-                // 🛑 KEEP SCREEN AWAKE: Prevent the screen from dimming/sleeping during active filming
-                UIApplication.shared.isIdleTimerDisabled = true
-                print("📱 Screen idle timer disabled. Device will stay awake.")
             }
             .store(in: &cancellables)
     }
@@ -131,13 +115,10 @@ final class RecordingViewModel: ObservableObject {
     
     private func handleIncomingMovieFile(url: URL) {
         guard var session = currentSession else { return }
-                
+        
         if self.recordingState == .active {
             self.recordingState = .idle
             self.stopTimer()
-            
-            // 🔋 RESTORE AUTO-SLEEP if stopped unexpectedly
-            UIApplication.shared.isIdleTimerDisabled = false
         }
         
         var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -221,23 +202,6 @@ final class RecordingViewModel: ObservableObject {
         
         self.saveSessionsToDisk()
         self.updateStorageSize()
-        
-        if SupabaseService.shared.isConfigured,
-           let syncedSession = self.sessions.first(where: { $0.id == sessionID }) {
-            Task {
-                await SupabaseService.shared.syncSession(syncedSession)
-                await MainActor.run {
-                    if let index = self.sessions.firstIndex(where: { $0.id == sessionID }) {
-                        for clipIndex in self.sessions[index].clips.indices {
-                            if self.sessions[index].clips[clipIndex].highlightIndex != nil {
-                                self.sessions[index].clips[clipIndex].isUploaded = true
-                            }
-                        }
-                        self.saveSessionsToDisk()
-                    }
-                }
-            }
-        }
         
         let highlightURLs = finalClips.compactMap { $0.highlightIndex != nil ? $0.fileURL : nil }
         if !highlightURLs.isEmpty {
@@ -348,51 +312,44 @@ final class RecordingViewModel: ObservableObject {
             beginRecordingSession(session: session)
         }
         
-    func endSession(navigateToClips: Bool = true) {
-        guard var session = currentSession else { return }
-        session.endedAt = Date()
-        session.isProcessing = true
-        session.clips = pendingHighlightClips
-        
-        currentSession = session
-        recordingState = .idle
-        stopTimer()
-        
-        cameraManager.stopMovieRecording()
-        
-        // 🔋 RESTORE AUTO-SLEEP: Allow the phone to sleep normally again
-        UIApplication.shared.isIdleTimerDisabled = false
-        print("📱 Screen idle timer re-enabled.")
-        
-        // 🛑 Only switch tabs if we weren't interrupted by a phone call!
-//        if navigateToClips {
-//            shouldNavigateToClips = true
-//        }
-    }
-        
-    func createNewSession(withID id: UUID) {
-        let newSession = Session(id: id, mode: .fullSession)
-        self.currentSession = newSession
-        self.sessions.insert(newSession, at: 0)
-    }
-    
-    func toggleRecording(with multipeerManager: MultipeerManager) {
-        if recordingState == .active {
-            endSession()
-        } else {
-            // ✅ FIX: Correctly passes the manager instance to prevent compiler mismatch errors
-            requestStartSession(multipeerManager: multipeerManager)
+        func endSession(navigateToClips: Bool = true) {
+            guard var session = currentSession else { return }
+            session.endedAt = Date()
+            session.isProcessing = true
+            session.clips = pendingHighlightClips
+            
+            currentSession = session
+            recordingState = .idle
+            stopTimer()
+            
+            cameraManager.stopMovieRecording()
+            
+            // 🛑 Only switch tabs if we weren't interrupted by a phone call!
+            if navigateToClips {
+                shouldNavigateToClips = true
+            }
         }
-    }
+        
+        func createNewSession(withID id: UUID) {
+            let newSession = Session(id: id, mode: .fullSession)
+            self.currentSession = newSession
+            self.sessions.insert(newSession, at: 0)
+        }
+        
+        func toggleRecording(with multipeerManager: MultipeerManager) {
+            if recordingState == .active {
+                endSession()
+            } else {
+                // ✅ FIX: Correctly passes the manager instance to prevent compiler mismatch errors
+                requestStartSession(multipeerManager: multipeerManager)
+            }
+        }
     
     func discardSession() {
         stopTimer()
         cameraManager.stopMovieRecording()
         currentSession = nil
         recordingState = .idle
-        
-        // 🔋 RESTORE AUTO-SLEEP if session is canceled
-        UIApplication.shared.isIdleTimerDisabled = false
     }
     
     // MARK: - Helpers

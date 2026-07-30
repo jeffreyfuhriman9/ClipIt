@@ -101,32 +101,63 @@ final class WatermarkService {
         
         let ciLogo = CIImage(cgImage: cgLogo)
         
-        // --- 1. Pre-calculate Geometry & Math ---
+        // --- 1. Pre-calculate Geometry & Math (Once per video, not per frame!) ---
         let referenceDimension = min(renderSize.width, renderSize.height)
         
-        // Scaled to 22% of the shortest side
+        // Scaled elegantly to 22% of the shortest side
         let badgeW = referenceDimension * 0.22
         let badgeH = badgeW * (CGFloat(cgLogo.height) / CGFloat(cgLogo.width))
         
-        // Uniform padding relative to the shortest side
+        // Tight, uniform padding relative to the shortest side
         let padding = referenceDimension * 0.035
         
         // Coordinates for Top-Right corner
         let watermarkX = renderSize.width - badgeW - padding
         let watermarkY = renderSize.height - badgeH - padding
         
-        // Pre-bake the logo positioning recipe
-        let finalWatermarkLayer = ciLogo
+        let positionedLogo = ciLogo
             .transformed(by: CGAffineTransform(scaleX: badgeW / ciLogo.extent.width,
                                                y: badgeH / ciLogo.extent.height))
             .transformed(by: CGAffineTransform(translationX: watermarkX, y: watermarkY))
         
-        // --- 2. Per-Frame Execution Block ---
+        // --- 2. Pre-generate "POWERED BY" Text Layer ---
+        let textFont = UIFont.systemFont(ofSize: badgeH * 0.35, weight: .bold)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: textFont,
+            .foregroundColor: UIColor.white.withAlphaComponent(0.5)
+        ]
+        let attributedString = NSAttributedString(string: "POWERED BY ", attributes: attributes)
+        
+        // Set up Core Image filter chain once
+        var finalWatermarkLayer = positionedLogo
+        
+        if let textFilter = CIFilter(name: "CIAttributedTextImageGenerator") {
+            textFilter.setValue(attributedString, forKey: "inputText")
+            textFilter.setValue(1.0, forKey: "inputScaleFactor")
+            
+            if let ciText = textFilter.outputImage {
+                let textW = ciText.extent.width
+                let textH = ciText.extent.height
+                
+                // Anchor text safely to the left edge of the scaled logo
+                let textX = watermarkX - textW
+                let textY = watermarkY + (badgeH - textH) / 2
+                
+                let positionedText = ciText.transformed(by: CGAffineTransform(translationX: textX, y: textY))
+                
+                // Merge text and logo into a single, reusable static recipe
+                finalWatermarkLayer = positionedText.composited(over: positionedLogo)
+            }
+        }
+        
+        // --- 3. Ultra-Lean Per-Frame Execution Block ---
         let videoComposition = AVVideoComposition(asset: composition) { request in
             let sourceImage = request.sourceImage
             
-            // Directly overlay the logo on top of the video frame
+            // Core Image uses lazy execution evaluation. This just overlays our pre-baked recipe
+            // onto the incoming video frame stream instantly.
             let outputImage = finalWatermarkLayer.composited(over: sourceImage)
+            
             request.finish(with: outputImage, context: nil)
         }
         

@@ -2,7 +2,6 @@ import Foundation
 import AVFoundation
 import Combine
 import QuartzCore
-import UIKit
 
 final class CameraManager: NSObject, ObservableObject {
 
@@ -99,9 +98,8 @@ final class CameraManager: NSObject, ObservableObject {
                 self.session.startRunning()
                 
                 // Lock the autofocus engine to the dead-center immediately upon camera launch
-                Task { @MainActor in
-                    self.configureContinuousCenterFocus()
-                }
+                self.configureContinuousCenterFocus()
+                
                 DispatchQueue.main.async { self.isRunning = true }
             }
         }
@@ -314,20 +312,12 @@ final class CameraManager: NSObject, ObservableObject {
     }
     
     // MARK: - Core Center Focus Controls
-    @MainActor // 🌟 This ensures UIApplication is always checked safely on the main thread
     func configureContinuousCenterFocus() {
-        // 🛑 1. Instantly exit if the phone is locked, inactive, or backgrounded
-        guard UIApplication.shared.applicationState == .active else {
-            return
-        }
-        
         guard let videoDevice = videoInput?.device else {
             print("❌ Camera device could not be reached for focusing rules.")
             return
         }
         
-        // Background threads are allowed to lock the hardware device, so we push that work off-main if needed,
-        // but doing it here directly under @MainActor is perfectly safe and fast.
         do {
             try videoDevice.lockForConfiguration()
             let centerPoint = CGPoint(x: 0.5, y: 0.5)
@@ -346,6 +336,7 @@ final class CameraManager: NSObject, ObservableObject {
             }
             
             videoDevice.unlockForConfiguration()
+            print("🎯 Camera successfully locked to continuous center auto-focus.")
         } catch {
             print("❌ Failed to lock camera device configurations: \(error.localizedDescription)")
         }
@@ -499,9 +490,8 @@ final class CameraManager: NSObject, ObservableObject {
                     self.session.startRunning()
                     
                     // 🔥 THE FIX: Re-lock focus on startup
-                    Task { @MainActor in
-                        self.configureContinuousCenterFocus()
-                    }
+                    self.configureContinuousCenterFocus()
+                    
                     DispatchQueue.main.async { self.isRunning = true }
                 }
             }
@@ -515,9 +505,8 @@ final class CameraManager: NSObject, ObservableObject {
                     self.session.startRunning()
                     
                     // 🔥 THE FIX: Re-lock focus on app foreground recovery
-                    Task { @MainActor in
-                        self.configureContinuousCenterFocus()
-                    }
+                    self.configureContinuousCenterFocus()
+                    
                     DispatchQueue.main.async { self.isRunning = true }
                 }
             }
@@ -569,10 +558,7 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
                                 didFinishRecordingTo outputFileURL: URL,
                                 from connections: [AVCaptureConnection],
                                 error: Error?) {
-        if let error {
-            let nsError = error as NSError
-            print("[CameraManager] Movie stopped. Domain: \(nsError.domain) | Code: \(nsError.code) | Reason: \(nsError.localizedDescription)")
-        }
+        if let error { print("[CameraManager] movie recording error: \(error)") }
         Task { @MainActor in self.movieFileReady.send(outputFileURL) }
     }
 }

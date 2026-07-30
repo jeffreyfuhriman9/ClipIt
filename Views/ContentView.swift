@@ -6,8 +6,8 @@ struct ContentView: View {
     @State private var selectedTab: Int = 0
     
     // Core App State Engines initialized cleanly at root
-    @EnvironmentObject var multipeerManager: MultipeerManager
-    
+    @StateObject var multipeerManager = MultipeerManager()
+
     var body: some View {
         ZStack {
             TabView(selection: $selectedTab) {
@@ -58,6 +58,7 @@ struct ContentView: View {
             } message: {
                 Text("The primary device is requesting to import the full-length high-quality master recording.")
             }
+            .lowPowerModeWarning()
             
             // 🌟 GLOBAL IMPORT/EXPORT PROGRESS OVERLAY
             if multipeerManager.isTransferringFile {

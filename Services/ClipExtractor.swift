@@ -193,7 +193,7 @@ final class ClipExtractor {
             let sourceImage = request.sourceImage
             let renderSize = sourceImage.extent.size
             
-            // 🛡️ Safeguard check
+            // 🛡️ CRITICAL FIX: Block rendering computations if dimensions are invalid or uninitialized
             guard renderSize.width > 0, renderSize.height > 0,
                   cgLogo.width > 0, cgLogo.height > 0,
                   ciLogo.extent.width > 0, ciLogo.extent.height > 0 else {
@@ -201,13 +201,17 @@ final class ClipExtractor {
                 return
             }
             
+            // 📐 ORIENTATION FIX: Base scaling on the shortest dimension of the video frame.
             let referenceDimension = min(renderSize.width, renderSize.height)
             
             // --- 1. Proportional Dimensions for Logo ---
             let badgeW = referenceDimension * 0.22
             let badgeH = badgeW * (CGFloat(cgLogo.height) / CGFloat(cgLogo.width))
+            
+            // Tight, uniform padding relative to the shortest side
             let padding = referenceDimension * 0.035
             
+            // Coordinates for Top-Right corner (Core Image origin is Bottom-Left)
             let watermarkX = renderSize.width - badgeW - padding
             let watermarkY = renderSize.height - badgeH - padding
             
@@ -216,14 +220,67 @@ final class ClipExtractor {
                                                    y: badgeH / ciLogo.extent.height))
                 .transformed(by: CGAffineTransform(translationX: watermarkX, y: watermarkY))
             
-            // --- 2. Composite Only The Logo Layer ---
-            let outputImage = positionedLogo.composited(over: sourceImage)
+            // --- 2. Generate "POWERED BY" Text Layer ---
+            let textFontSize = badgeH * 0.35
+            
+            // 🛡️ CRITICAL FIX: Guard against a 0 or negative font size which breaks text generation layouts
+            guard textFontSize > 0 else {
+                let outputImage = positionedLogo.composited(over: sourceImage)
+                request.finish(with: outputImage, context: nil)
+                return
+            }
+            
+            let textFont = UIFont.systemFont(ofSize: textFontSize, weight: .bold)
+            
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: textFont,
+                .foregroundColor: UIColor.white.withAlphaComponent(0.5)
+            ]
+            let attributedString = NSAttributedString(string: "POWERED BY ", attributes: attributes)
+            
+            guard let textFilter = CIFilter(name: "CIAttributedTextImageGenerator") else {
+                let outputImage = positionedLogo.composited(over: sourceImage)
+                request.finish(with: outputImage, context: nil)
+                return
+            }
+            
+            textFilter.setValue(attributedString, forKey: "inputText")
+            textFilter.setValue(1.0, forKey: "inputScaleFactor")
+            
+            guard let ciText = textFilter.outputImage else {
+                let outputImage = positionedLogo.composited(over: sourceImage)
+                request.finish(with: outputImage, context: nil)
+                return
+            }
+            
+            // --- 3. Dynamic Alignment & NaN Safeguards ---
+            let textW = ciText.extent.width
+            let textH = ciText.extent.height
+            
+            // 🛡️ CRITICAL FIX: Ensure text image extent is valid and finite before performing geometric transformations
+            guard !textW.isNaN && !textW.isInfinite && textW > 0,
+                  !textH.isNaN && !textH.isInfinite && textH > 0 else {
+                let outputImage = positionedLogo.composited(over: sourceImage)
+                request.finish(with: outputImage, context: nil)
+                return
+            }
+            
+            // Anchor text safely to the left edge of the scaled logo
+            let textX = watermarkX - textW
+            let textY = watermarkY + (badgeH - textH) / 2
+            
+            let positionedText = ciText.transformed(by: CGAffineTransform(translationX: textX, y: textY))
+            
+            // --- 4. Composite Layers ---
+            let combinedWatermark = positionedText.composited(over: positionedLogo)
+            let outputImage = combinedWatermark.composited(over: sourceImage)
+            
             request.finish(with: outputImage, context: nil)
         }
         
         return videoComposition
     }
-    
+
     // MARK: - Output URL
 
     private static func clipOutputURL(for clip: Clip) -> URL {

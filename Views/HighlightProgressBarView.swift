@@ -63,15 +63,12 @@ struct HighlightExtractionProgressView: View {
             .frame(height: 8)
         }
         .padding()
-        .frame(maxWidth: 360) // 🌟 THE FIX: Hard-caps the width so it stays beautifully centered!
         .background(Color(white: 0.12))
         .cornerRadius(14)
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
-        // Add a subtle shadow so it floats off the camera feed nicely
-        .shadow(color: Color.black.opacity(0.4), radius: 10, y: 5)
     }
 }
 
@@ -126,14 +123,11 @@ struct ImportProgressView: View {
             .frame(height: 8)
         }
         .padding()
-        .frame(maxWidth: 360) // 🌟 THE FIX: Hard-caps the width so it stays beautifully centered!
         .background(Color(white: 0.12))
         .cornerRadius(14)
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
-        // Add a subtle shadow so it floats off the camera feed nicely
-        .shadow(color: Color.black.opacity(0.4), radius: 10, y: 5)
     }
 }

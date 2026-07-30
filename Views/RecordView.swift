@@ -44,11 +44,6 @@ struct RecordView: View {
     @State private var transferClipsOnCompletion = false
     @State private var showImportPrompt = false
     
-    // Dimming screen for recording
-    @AppStorage("dimScreenDuringRecording") private var dimScreenDuringRecording = false
-    @State private var originalBrightness: CGFloat = 0.5
-    @Environment(\.scenePhase) var scenePhase // To detect if the app goes to the background
-    
     
     private var exposureBiasBinding: Binding<Double> {
         Binding(
@@ -57,10 +52,156 @@ struct RecordView: View {
         )
     }
     
-    // 🌟 1. The body now ONLY handles behavior and lifecycle modifiers!
-        var body: some View {
-            mainContent
-                // ✅ ALL Root Layout Pipeline Modifiers attach safely here to the ZStack!
+    var body: some View {
+            ZStack {
+                cameraPreview
+                
+                // Shadow Gradient
+                LinearGradient(
+                    colors: [Color.black.opacity(0.24), Color.clear, Color.black.opacity(0.42)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                
+                // Tap-to-focus indicator overlay
+                if showFocusIndicator, let pt = focusPoint {
+                    FocusIndicatorView(
+                        showBrightness: showBrightnessSlider,
+                        exposureBias: exposureBiasBinding,
+                        onSliderChanged: { rescheduleBrightnessHide() }
+                    )
+                    .position(pt)
+                    .allowsHitTesting(showBrightnessSlider)
+                    .zIndex(2)
+                    .id(focusID)
+                }
+                
+                GeometryReader { geo in
+                    let isLandscape = geo.size.width > geo.size.height
+                    let isLandscapeLeft = orientation == .landscapeLeft
+                        
+                        ZStack {
+                            // Gesture Capture Layer
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .gesture(
+                                    MagnificationGesture()
+                                        .onChanged { value in
+                                            let dynamicDelta = value.magnitude
+                                            let baseZoom = recordingVM.cameraManager.zoomFactor
+                                            let targetZoom = lastZoomFactor == 1.0 ? baseZoom * dynamicDelta : baseZoom + (value - lastZoomFactor)
+                                            lastZoomFactor = value
+                                            recordingVM.cameraManager.setZoom(targetZoom)
+                                        }
+                                        .onEnded { _ in
+                                            lastZoomFactor = 1.0
+                                        }
+                                )
+                                .onTapGesture { location in
+                                    if showCameraControls {
+                                        withAnimation { showCameraControls = false }
+                                    }
+                                    handleTapToFocus(at: location)
+                                }
+                            
+                            // 🎛️ CORE INTERFACE CONTROLS CONTAINER LAYER
+                            VStack(spacing: 0) {
+                                
+                                // 1. Top Bar Items (Always at the top)
+                                topOverlayView(isLandscape: isLandscape)
+                                    .padding(.trailing, isLandscape && isLandscapeLeft ? 120 : 0)
+                                    .padding(.leading, isLandscape && !isLandscapeLeft ? 120 : 0)
+                                
+                                Spacer()
+                                
+                                // 2. Dynamic Adaptive Lower Controls Matrix
+                                if isLandscape {
+                                    HStack(alignment: .center) {
+                                        if isLandscapeLeft {
+                                            // 📱 Phone left: Badge on LEFT edge, TOP
+                                            VStack {
+                                                timingBadge.padding(.top, -54)
+                                                Spacer()
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            if showCameraControls {
+                                                VStack {
+                                                    Spacer()
+                                                    cameraControlsPanel.padding(.bottom, 75)
+                                                }
+                                            }
+                                            
+                                            sideOverlayView(isLandscapeLeft: isLandscapeLeft)
+                                            
+                                        } else {
+                                            // 📱 Phone right: Controls on left edge
+                                            sideOverlayView(isLandscapeLeft: isLandscapeLeft)
+                                            
+                                            if showCameraControls {
+                                                VStack {
+                                                    Spacer()
+                                                    cameraControlsPanel.padding(.bottom, 75)
+                                                }
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            // ✅ THE FIX: Badge on RIGHT edge, BOTTOM!
+                                            VStack {
+                                                Spacer() // Pushes the badge all the way down
+                                                timingBadge.padding(.bottom, 36)
+                                            }
+                                        }
+                                    }
+                                    .safeAreaPadding(.horizontal)
+                                    
+                                } else {
+                                    // Default Portrait configuration layout block
+                                    VStack {
+                                        Spacer()
+                                        if showCameraControls {
+                                            cameraControlsPanel
+                                        }
+                                        bottomOverlay
+                                    }
+                                }
+                            }
+                            .zIndex(1)
+                            
+                            // Clip saved notification banner overlay
+                            VStack {
+                                Spacer()
+                                if showClipSavedBanner {
+                                    Text(clipSavedText)
+                                        .font(.system(size: 16, weight: .heavy))
+                                        .foregroundColor(.red)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 20)
+                                        .background(.ultraThinMaterial)
+                                        .clipShape(Capsule())
+                                        .shadow(color: Color.black.opacity(0.25), radius: 10, y: 4)
+                                        .transition(.opacity)
+                                        .padding(.bottom, isLandscape ? 80 : showCameraControls ? 240 : 175)
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.25), value: showClipSavedBanner)
+                            .zIndex(2)
+                        }
+                        .animation(.easeInOut(duration: 0.25), value: isLandscape)
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                    let newOrientation = UIDevice.current.orientation
+                    if newOrientation.isValidInterfaceOrientation { orientation = newOrientation }
+                }
+                
+                // 📞 PHONE CALL INTERRUPTION BOX OVERLAY
+                callInterruptionOverlayView
+            }
+            // ✅ 1. ALL Root Layout Pipeline Modifiers attach safely here to the ZStack!
                 .ignoresSafeArea()
                 .animation(.easeInOut(duration: 0.25), value: orientation)
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showCameraControls)
@@ -83,6 +224,7 @@ struct RecordView: View {
                         .environmentObject(recordingVM)
                 }
                 .onAppear {
+                    Haptics.prepare()
                     callMonitor.setupViewModel(recordingVM)
                     recordingVM.cameraManager.startIfNeeded()
                     DispatchQueue.main.async {
@@ -98,12 +240,6 @@ struct RecordView: View {
                 }
                 .onDisappear {
                     bleVM.stopScanning()
-                    
-                    // Force-restore system sleep capabilities instantly on the main actor thread
-                    DispatchQueue.main.async {
-                        UIApplication.shared.isIdleTimerDisabled = false
-                        print("📱 Safety Trigger: Camera view disappeared. System auto-lock restored.")
-                    }
                 }
                 .onChange(of: callMonitor.isOnCall) { oldValue, isNowOnCall in
                     if isNowOnCall {
@@ -146,6 +282,7 @@ struct RecordView: View {
                         print("Secondary camera received command to start recording with specific ID: \(sessionID)")
                         if recordingVM.recordingState != .active {
                             transferClipsOnCompletion = false
+                            // Implement matching logic or pass the sessionID down if required by your ViewModel:
                             recordingVM.requestStartSession(multipeerManager: multipeerManager)
                         }
 
@@ -182,330 +319,7 @@ struct RecordView: View {
                         recordingVM.justFinishedSessionClips = []
                     }
                 }
-                // 1. Recording State Check (iOS 17+ Syntax)
-                .onChange(of: recordingVM.recordingState) { oldState, newState in
-                    if newState == .active {
-                        if dimScreenDuringRecording {
-                            // Save the user's current brightness, then dim it to 1%
-                            originalBrightness = UIScreen.main.brightness
-                            UIScreen.main.brightness = 0.01
-                        }
-                    } else {
-                        if dimScreenDuringRecording {
-                            // Restore it when recording stops
-                            UIScreen.main.brightness = originalBrightness
-                        }
-                    }
-                }
-
-                // 2. Scene Phase Check (iOS 17+ Syntax)
-                .onChange(of: scenePhase) { oldPhase, newPhase in
-                    // SAFETY: If the user swipes home while the screen is dim, put the brightness back to normal!
-                    if newPhase != .active && dimScreenDuringRecording {
-                        UIScreen.main.brightness = originalBrightness
-                    }
-                }
-        }
-        
-        // 🌟 2. The visual layout now lives here safely with correct property mapping!
-        private var mainContent: some View {
-            ZStack {
-                cameraPreview
-                
-                // Shadow Gradient
-                LinearGradient(
-                    colors: [Color.black.opacity(0.24), Color.clear, Color.black.opacity(0.42)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-                
-                // Tap-to-focus indicator overlay
-                if showFocusIndicator, let pt = focusPoint {
-                    FocusIndicatorView(
-                        showBrightness: showBrightnessSlider,
-                        exposureBias: exposureBiasBinding,
-                        onSliderChanged: { rescheduleBrightnessHide() }
-                    )
-                    .position(pt)
-                    .allowsHitTesting(showBrightnessSlider)
-                    .zIndex(2)
-                    .id(focusID)
-                }
-                
-                GeometryReader { geo in
-                    let isLandscape = geo.size.width > geo.size.height
-                    let isLandscapeLeft = orientation == .landscapeLeft
-                        
-                    ZStack {
-                        // Gesture Capture Layer
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .gesture(
-                                MagnificationGesture()
-                                    .onChanged { value in
-                                        let dynamicDelta = value.magnitude
-                                        let baseZoom = recordingVM.cameraManager.zoomFactor
-                                        let targetZoom = lastZoomFactor == 1.0 ? baseZoom * dynamicDelta : baseZoom + (value - lastZoomFactor)
-                                        lastZoomFactor = value
-                                        recordingVM.cameraManager.setZoom(targetZoom)
-                                    }
-                                    .onEnded { _ in
-                                        lastZoomFactor = 1.0
-                                    }
-                            )
-                            .onTapGesture { location in
-                                if showCameraControls {
-                                    withAnimation { showCameraControls = false }
-                                }
-                                handleTapToFocus(at: location)
-                            }
-                        
-                        // 🎛️ CORE INTERFACE CONTROLS CONTAINER LAYER
-                        VStack(spacing: 0) {
-                            
-                            // 1. Top Bar Items (Always at the top)
-                            topOverlayView(isLandscape: isLandscape)
-                                .padding(.trailing, isLandscape && isLandscapeLeft ? 120 : 0)
-                                .padding(.leading, isLandscape && !isLandscapeLeft ? 120 : 0)
-                            
-                            Spacer()
-                            
-                            // 2. Dynamic Adaptive Lower Controls Matrix
-                            if isLandscape {
-                                HStack(alignment: .center) {
-                                    if isLandscapeLeft {
-                                        // 📱 Phone left: Badge on LEFT edge, TOP
-                                        VStack {
-                                            timingBadge.padding(.top, -54)
-                                            Spacer()
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        if showCameraControls {
-                                            VStack {
-                                                Spacer()
-                                                cameraControlsPanel.padding(.bottom, 75)
-                                            }
-                                        }
-                                        
-                                        sideOverlayView(isLandscapeLeft: isLandscapeLeft)
-                                        
-                                    } else {
-                                        // 📱 Phone right: Controls on left edge
-                                        sideOverlayView(isLandscapeLeft: isLandscapeLeft)
-                                        
-                                        if showCameraControls {
-                                            VStack {
-                                                Spacer()
-                                                cameraControlsPanel.padding(.bottom, 75)
-                                            }
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        // Badge on RIGHT edge, BOTTOM
-                                        VStack {
-                                            Spacer()
-                                            timingBadge.padding(.bottom, 36)
-                                        }
-                                    }
-                                }
-                                .safeAreaPadding(.horizontal)
-                                
-                            } else {
-                                // Default Portrait configuration layout block
-                                VStack {
-                                    Spacer()
-                                    if showCameraControls {
-                                        cameraControlsPanel
-                                    }
-                                    bottomOverlay
-                                }
-                            }
-                        }
-                        .zIndex(1)
-                        
-                        // Clip saved notification banner overlay
-                        VStack {
-                            Spacer()
-                            if showClipSavedBanner {
-                                Text(clipSavedText)
-                                    .font(.system(size: 16, weight: .heavy))
-                                    .foregroundColor(.red)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 20)
-                                    .background(.ultraThinMaterial)
-                                    .clipShape(Capsule())
-                                    .shadow(color: Color.black.opacity(0.25), radius: 10, y: 4)
-                                    .transition(.opacity)
-                                    .padding(.bottom, isLandscape ? 80 : showCameraControls ? 240 : 175)
-                            }
-                        }
-                        .animation(.easeInOut(duration: 0.25), value: showClipSavedBanner)
-                        .zIndex(2)
-                    }
-                    .animation(.easeInOut(duration: 0.25), value: isLandscape)
-                }
-                .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-                    let newOrientation = UIDevice.current.orientation
-                    if newOrientation.isValidInterfaceOrientation { orientation = newOrientation }
-                }
-                
-                // 📞 PHONE CALL INTERRUPTION BOX OVERLAY
-                callInterruptionOverlayView
-                
-                // 🌟 THE FLOATING PROGRESS BARS (Completely Independent)
-                // ✅ FIXED: Properties updated to match your exact view model types!
-                if recordingVM.isExtractingHighlights {
-                    VStack {
-                        Spacer() // Pushes it down
-                        HighlightExtractionProgressView(
-                            currentCount: recordingVM.currentExtractionProgress,
-                            totalCount: recordingVM.totalExtractionCount
-                        )
-                        Spacer()
-                    }
-                    .zIndex(100)
-                    .allowsHitTesting(false)
-                }
-                
-                if recordingVM.isImportingSecondary {
-                    VStack {
-                        Spacer()
-                        // ✅ FIXED: Changed recordingVM.importProgress to multipeerManager.fullVideoProgress
-                        ImportProgressView(progress: multipeerManager.fullVideoProgress)
-                            .padding(.bottom, orientation.isLandscape ? 40 : 120)
-                    }
-                    .zIndex(100)
-                    .allowsHitTesting(false)
-                }
             }
-        }
-    
-    private var adaptiveInterfaceLayer: some View {
-        GeometryReader { geo in
-            let isLandscape = geo.size.width > geo.size.height
-            let isLandscapeLeft = orientation == .landscapeLeft
-            
-            ZStack {
-                // Gesture Capture Layer
-                Color.clear
-                    .contentShape(Rectangle())
-                    .gesture(
-                        MagnificationGesture()
-                            .onChanged { value in
-                                let dynamicDelta = value.magnitude
-                                let baseZoom = recordingVM.cameraManager.zoomFactor
-                                let targetZoom = lastZoomFactor == 1.0 ? baseZoom * dynamicDelta : baseZoom + (value - lastZoomFactor)
-                                lastZoomFactor = value
-                                recordingVM.cameraManager.setZoom(targetZoom)
-                            }
-                            .onEnded { _ in
-                                lastZoomFactor = 1.0
-                            }
-                    )
-                    .onTapGesture { location in
-                        if showCameraControls {
-                            withAnimation { showCameraControls = false }
-                        }
-                        handleTapToFocus(at: location)
-                    }
-                
-                // 🎛️ CORE INTERFACE CONTROLS CONTAINER LAYER
-                VStack(spacing: 0) {
-                    
-                    // 1. Top Bar Items (Always at the top)
-                    topOverlayView(isLandscape: isLandscape)
-                        .padding(.trailing, isLandscape && isLandscapeLeft ? 120 : 0)
-                        .padding(.leading, isLandscape && !isLandscapeLeft ? 120 : 0)
-                    
-                    Spacer()
-                    
-                    // 2. Dynamic Adaptive Lower Controls Matrix
-                    if isLandscape {
-                        HStack(alignment: .center) {
-                            if isLandscapeLeft {
-                                // 📱 Phone left: Badge on LEFT edge, TOP
-                                VStack {
-                                    timingBadge.padding(.top, -54)
-                                    Spacer()
-                                }
-                                
-                                Spacer()
-                                
-                                if showCameraControls {
-                                    VStack {
-                                        Spacer()
-                                        cameraControlsPanel.padding(.bottom, 75)
-                                    }
-                                }
-                                
-                                sideOverlayView(isLandscapeLeft: isLandscapeLeft)
-                                
-                            } else {
-                                // 📱 Phone right: Controls on left edge
-                                sideOverlayView(isLandscapeLeft: isLandscapeLeft)
-                                
-                                if showCameraControls {
-                                    VStack {
-                                        Spacer()
-                                        cameraControlsPanel.padding(.bottom, 75)
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                // ✅ THE FIX: Badge on RIGHT edge, BOTTOM!
-                                VStack {
-                                    Spacer() // Pushes the badge all the way down
-                                    timingBadge.padding(.bottom, 36)
-                                }
-                            }
-                        }
-                        .safeAreaPadding(.horizontal)
-                        
-                    } else {
-                        // Default Portrait configuration layout block
-                        VStack {
-                            Spacer()
-                            if showCameraControls {
-                                cameraControlsPanel
-                            }
-                            bottomOverlay
-                        }
-                    }
-                }
-                .zIndex(1)
-                
-                // Clip saved notification banner overlay
-                VStack {
-                    Spacer()
-                    if showClipSavedBanner {
-                        Text(clipSavedText)
-                            .font(.system(size: 16, weight: .heavy))
-                            .foregroundColor(.red)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 20)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
-                            .shadow(color: Color.black.opacity(0.25), radius: 10, y: 4)
-                            .transition(.opacity)
-                            .padding(.bottom, isLandscape ? 80 : showCameraControls ? 240 : 175)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.25), value: showClipSavedBanner)
-                .zIndex(2)
-            }
-            .animation(.easeInOut(duration: 0.25), value: isLandscape)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            let newOrientation = UIDevice.current.orientation
-            if newOrientation.isValidInterfaceOrientation { orientation = newOrientation }
-        }
-    }
     
     // MARK: - Extracted Subviews
             
@@ -630,6 +444,30 @@ struct RecordView: View {
                         Spacer()
 
                         VStack(alignment: .trailing, spacing: 8) {
+                            // BLE Indicator Capsule
+                            if bleVM.bleState.isConnected {
+                                HStack(spacing: 8) {
+                                    Circle().fill(Color.green).frame(width: 7, height: 7)
+                                    Text("Button Connected")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.white)
+                                    
+                                    if let batteryLevel = bleVM.remoteBatteryLevel {
+                                        Text("• \(batteryLevel)%")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.white.opacity(0.8))
+                                        
+                                        Image(systemName: getBatteryIcon(for: batteryLevel))
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.white)
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
+                            }
+                            
                             // Multi-Cam Control Button neatly nested right here!
                             Button(action: { showMultiCamSheet = true }) {
                                 HStack(spacing: 6) {
@@ -648,9 +486,18 @@ struct RecordView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 45)
-                
+                    
+                    // Highlight Extraction Progress Bar UI
+                    if recordingVM.isExtractingHighlights {
+                        HighlightExtractionProgressView(
+                            currentCount: recordingVM.currentExtractionProgress,
+                            totalCount: recordingVM.totalExtractionCount
+                        )
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .padding(.top, 10)
+                    }
                     // Sleek Incoming Highlights Tracker
-                    if multipeerManager.isReceivingHighlightBatch {
+                    else if multipeerManager.isReceivingHighlightBatch {
                         VStack(spacing: 4) {
                             Text("Receiving Highlights...")
                                 .font(.caption)
@@ -987,7 +834,7 @@ struct RecordView: View {
     private func handleRecordTap() {
         if recordingVM.recordingState == .active {
             // Normal recording buttons use navigation
-            recordingVM.endSession()
+            recordingVM.endSession(navigateToClips: true)
             // 📡 Broadcast to Follower Cam to stop as well:
             multipeerManager.sendCommand(.stopRecording)
             
@@ -997,11 +844,6 @@ struct RecordView: View {
                 showImportPrompt = true
             }
             
-            DispatchQueue.main.async {
-                UIApplication.shared.isIdleTimerDisabled = false
-                print("📱 Recording stopped: Screen idle timer re-enabled.")
-            }
-            
         } else {
             // 🧼 FIX: Reset transfer pipeline flags for the new session
             transferClipsOnCompletion = false
@@ -1009,10 +851,6 @@ struct RecordView: View {
             recordingVM.requestStartSession(multipeerManager: multipeerManager)
             // 📡 Broadcast to Follower Cam to start:
             multipeerManager.sendCommand(.startRecording)
-            DispatchQueue.main.async {
-                UIApplication.shared.isIdleTimerDisabled = true
-                print("📱 Recording started: Screen idle timer disabled (Staying Awake).")
-            }
         }
     }
     
@@ -1394,3 +1232,23 @@ private struct CircleButton: View {
         .disabled(disabled)
     }
 }
+
+// Helper functions to copy-paste inside the files using them:
+private func getBatteryColor(for level: Int) -> Color {
+    switch level {
+    case ...20:  return .red
+    case 21...50: return .orange
+    default:      return .green
+    }
+}
+
+private func getBatteryIcon(for level: Int) -> String {
+    switch level {
+    case ...10:   return "battery.0percent"
+    case 11...35:  return "battery.25percent"
+    case 36...65:  return "battery.50percent"
+    case 66...85:  return "battery.75percent"
+    default:       return "battery.100percent"
+    }
+}
+

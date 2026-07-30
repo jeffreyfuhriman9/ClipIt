@@ -7,10 +7,6 @@ private let kServiceUUID = CBUUID(string: "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 private let kRXCharUUID  = CBUUID(string: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
 private let kTXCharUUID  = CBUUID(string: "6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
 
-// Standard Bluetooth Battery Service
-private let kBatteryServiceUUID = CBUUID(string: "180F")
-private let kBatteryLevelUUID   = CBUUID(string: "2A19")
-
 enum BLEState {
     case poweredOff
     case scanning
@@ -59,8 +55,6 @@ final class BLEViewModel: NSObject, ObservableObject {
     private var connectedPeripheral: CBPeripheral?
     private var txCharacteristic: CBCharacteristic?
     private var rxCharacteristic: CBCharacteristic?
-    
-    private var batteryCharacteristic: CBCharacteristic?
 
     private var hasAutoConnected = false
     private var incomingBuffer = ""
@@ -114,23 +108,11 @@ final class BLEViewModel: NSObject, ObservableObject {
         lastMessage = message
         print("BLE received: \(message)")
 
-        // 🔋 1. Parse Live Battery Stream Updates
-        if message.hasPrefix("BATTERY") {
-            // Strip out non-digits (leaves just the percentage number)
-            let numericString = message.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-            if let newBatteryValue = Int(numericString) {
-                self.remoteBatteryLevel = newBatteryValue
-            }
-            return
-        }
-
-        // 🎬 2. Existing Toggle Recording Action
         if message == "TOGGLE_RECORD" {
             toggleRecordTrigger.send()
             return
         }
 
-        // ✂️ 3. Existing Clip Button Action
         if message.hasPrefix("CLIP") {
             if hapticOnClip {
                 // Ensure your Haptics helper exists or remove this conditional safe call block
@@ -138,6 +120,14 @@ final class BLEViewModel: NSObject, ObservableObject {
             }
             clipTrigger.send()
             return
+        }
+        
+        // 🔋 NEW: Intercept and process the custom battery data payload string ("BATT 87")
+        if message.hasPrefix("BATT") {
+            let components = message.components(separatedBy: " ")
+            if components.count == 2, let parsedBattery = Int(components[1]) {
+                self.remoteBatteryLevel = parsedBattery
+            }
         }
     }
 }
@@ -209,10 +199,7 @@ extension BLEViewModel: CBCentralManagerDelegate {
 
         connectedPeripheral = peripheral
         peripheral.delegate = self
-        peripheral.discoverServices([
-            kServiceUUID,
-            kBatteryServiceUUID
-        ])
+        peripheral.discoverServices([kServiceUUID])
     }
 
     func centralManager(_ central: CBCentralManager,
@@ -255,63 +242,24 @@ extension BLEViewModel: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral,
                     didDiscoverServices error: Error?) {
+        guard error == nil, let services = peripheral.services else { return }
 
-        guard error == nil,
-              let services = peripheral.services else { return }
-
-        for service in services {
-
-            if service.uuid == kServiceUUID {
-
-                peripheral.discoverCharacteristics(
-                    [kTXCharUUID, kRXCharUUID],
-                    for: service
-                )
-
-            }
-
-            else if service.uuid == kBatteryServiceUUID {
-
-                peripheral.discoverCharacteristics(
-                    [kBatteryLevelUUID],
-                    for: service
-                )
-
-            }
+        for service in services where service.uuid == kServiceUUID {
+            peripheral.discoverCharacteristics([kTXCharUUID, kRXCharUUID], for: service)
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral,
                     didDiscoverCharacteristicsFor service: CBService,
                     error: Error?) {
-
-        guard error == nil,
-              let chars = service.characteristics else { return }
+        guard error == nil, let chars = service.characteristics else { return }
 
         for char in chars {
-
             if char.uuid == kTXCharUUID {
-
                 txCharacteristic = char
                 peripheral.setNotifyValue(true, for: char)
-
-            }
-
-            else if char.uuid == kRXCharUUID {
-
+            } else if char.uuid == kRXCharUUID {
                 rxCharacteristic = char
-
-            }
-
-            else if char.uuid == kBatteryLevelUUID {
-
-                batteryCharacteristic = char
-
-                // Read the battery immediately
-                peripheral.readValue(for: char)
-
-                // Receive future updates automatically
-                peripheral.setNotifyValue(true, for: char)
             }
         }
     }
@@ -319,38 +267,14 @@ extension BLEViewModel: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral,
                     didUpdateValueFor characteristic: CBCharacteristic,
                     error: Error?) {
-
         guard error == nil else { return }
+        guard characteristic.uuid == kTXCharUUID else { return }
+        guard let data = characteristic.value,
+              let text = String(data: data, encoding: .utf8) else { return }
 
-        // ------------------------
-        // UART messages
-        // ------------------------
-        if characteristic.uuid == kTXCharUUID {
-
-            guard let data = characteristic.value,
-                  let text = String(data: data, encoding: .utf8) else { return }
-
-            DispatchQueue.main.async {
-                self.handleIncomingMessage(text)
-            }
-
-            return
-        }
-
-        // ------------------------
-        // Battery Service
-        // ------------------------
-        if characteristic.uuid == kBatteryLevelUUID {
-
-            guard let data = characteristic.value,
-                  let battery = data.first else { return }
-
-            DispatchQueue.main.async {
-
-                self.remoteBatteryLevel = Int(battery)
-
-                print("🔋 Battery: \(battery)%")
-            }
+        // Forward all raw packets through the unified parsing engine on the main thread
+        DispatchQueue.main.async {
+            self.handleIncomingMessage(text)
         }
     }
 }
