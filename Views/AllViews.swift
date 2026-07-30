@@ -831,7 +831,24 @@ private struct TimelineBar: View {
 
 struct SettingsView: View {
     @EnvironmentObject var recordingVM: RecordingViewModel
+    @EnvironmentObject var supabaseService: SupabaseService
     @AppStorage("dimScreenDuringRecording") private var dimScreenDuringRecording = false
+    @State private var accountEmail = ""
+    @State private var authMessage: String?
+    @State private var isSendingMagicLink = false
+    
+    private var cloudStatusText: String {
+        if !supabaseService.isConfigured {
+            return "Not configured"
+        }
+        if supabaseService.isSyncing {
+            return "Syncing…"
+        }
+        if supabaseService.isSignedIn {
+            return "Connected"
+        }
+        return "Connecting…"
+    }
     
     var body: some View {
         NavigationStack {
@@ -879,25 +896,60 @@ struct SettingsView: View {
                     }
                 }
                 
-                Section("Account") {
-                    SettingsRow(icon: "star.fill", color: .purple, label: "Subscription") {
-                        Text("Free").foregroundColor(.secondary).font(.system(size: 14))
-                    }
-                    SettingsRow(icon: "cloud.fill", color: .gray, label: "Cloud Storage") {
-                        Text("Coming soon...").foregroundColor(.secondary).font(.system(size: 14))
-                    }
-                }
-                
                 Section("Storage") {
-                    SettingsRow(icon: "internaldrive.fill", color: .gray, label: "Clips Storage Used") {
+                    SettingsRow(icon: "internaldrive.fill", color: .gray, label: "Total Storage Used") {
                         Text(recordingVM.localStoreSize)
                             .foregroundColor(.secondary)
                             .font(.system(size: 14))
                     }
                 }
                 
+                Section("Account") {
+                    SettingsRow(icon: "star.fill", color: .purple, label: "Subscription") {
+                        Text("Free").foregroundColor(.secondary).font(.system(size: 14))
+                    }
+                    SettingsRow(icon: "cloud.fill", color: .gray, label: "Cloud Storage") {
+                        Text(cloudStatusText)
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 14))
+                    }
+                    
+                    if supabaseService.isConfigured {
+                        if let email = supabaseService.currentUserEmail {
+                            SettingsRow(icon: "person.fill", color: .blue, label: "Signed in as") {
+                                Text(email).foregroundColor(.secondary).font(.system(size: 14))
+                            }
+                        }
+                        
+                        if supabaseService.isSignedIn {
+                            Button("Sign Out", role: .destructive) {
+                                Task {
+                                    try? await supabaseService.signOut()
+                                    authMessage = nil
+                                }
+                            }
+                        }
+                        
+                        if let authMessage {
+                            Text(authMessage)
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        if let syncError = supabaseService.lastSyncError {
+                            Text(syncError)
+                                .font(.footnote)
+                                .foregroundColor(.red)
+                        }
+                    } else {
+                        Text("Copy Secrets.plist.example to Secrets.plist and add your Supabase project URL and anon key.")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
                 Section {
-                    Label("2026 ClipIt LLC • Version 1.3", systemImage: "c.circle")
+                    Text("2026 ClipIt LLC • Version 1.3")
                         .font(.footnote)
                         .foregroundColor(.gray)
                 }

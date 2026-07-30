@@ -4,6 +4,17 @@
 <dict>
 	<key>CFBundleGetInfoString</key>
 	<string></string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.clipit.highlights</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>clipit</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_clipit-sync._tcp</string>

@@ -222,6 +222,23 @@ final class RecordingViewModel: ObservableObject {
         self.saveSessionsToDisk()
         self.updateStorageSize()
         
+        if SupabaseService.shared.isConfigured,
+           let syncedSession = self.sessions.first(where: { $0.id == sessionID }) {
+            Task {
+                await SupabaseService.shared.syncSession(syncedSession)
+                await MainActor.run {
+                    if let index = self.sessions.firstIndex(where: { $0.id == sessionID }) {
+                        for clipIndex in self.sessions[index].clips.indices {
+                            if self.sessions[index].clips[clipIndex].highlightIndex != nil {
+                                self.sessions[index].clips[clipIndex].isUploaded = true
+                            }
+                        }
+                        self.saveSessionsToDisk()
+                    }
+                }
+            }
+        }
+        
         let highlightURLs = finalClips.compactMap { $0.highlightIndex != nil ? $0.fileURL : nil }
         if !highlightURLs.isEmpty {
             self.justFinishedSessionClips = highlightURLs
