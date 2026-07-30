@@ -44,6 +44,11 @@ struct RecordView: View {
     @State private var transferClipsOnCompletion = false
     @State private var showImportPrompt = false
     
+    // Dimming screen for recording
+    @AppStorage("dimScreenDuringRecording") private var dimScreenDuringRecording = false
+    @State private var originalBrightness: CGFloat = 0.5
+    @Environment(\.scenePhase) var scenePhase // To detect if the app goes to the background
+    
     
     private var exposureBiasBinding: Binding<Double> {
         Binding(
@@ -201,7 +206,9 @@ struct RecordView: View {
                 // 📞 PHONE CALL INTERRUPTION BOX OVERLAY
                 callInterruptionOverlayView
             }
-            // ✅ 1. ALL Root Layout Pipeline Modifiers attach safely here to the ZStack!
+                // 📱 OVERRIDE AUTO-LOCK & KEEP SCREEN AWAKE CONTINUOUSLY
+                .keepScreenAwake()
+                // ✅ 1. ALL Root Layout Pipeline Modifiers attach safely here to the ZStack!
                 .ignoresSafeArea()
                 .animation(.easeInOut(duration: 0.25), value: orientation)
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showCameraControls)
@@ -224,7 +231,6 @@ struct RecordView: View {
                         .environmentObject(recordingVM)
                 }
                 .onAppear {
-                    Haptics.prepare()
                     callMonitor.setupViewModel(recordingVM)
                     recordingVM.cameraManager.startIfNeeded()
                     DispatchQueue.main.async {
@@ -317,6 +323,38 @@ struct RecordView: View {
                         
                         transferClipsOnCompletion = false
                         recordingVM.justFinishedSessionClips = []
+                    }
+                }
+                // 1. Recording State Check
+                .onChange(of: recordingVM.recordingState) { oldState, newState in
+                    if newState == .active {
+                        if dimScreenDuringRecording {
+                            // Store the user's starting brightness before dimming
+                            originalBrightness = UIScreen.main.brightness
+                            UIScreen.main.brightness = 0.01
+                        }
+                    } else {
+                        if dimScreenDuringRecording {
+                            // Restore original brightness when recording ends
+                            UIScreen.main.brightness = originalBrightness
+                        }
+                    }
+                }
+
+                // 2. 🛡️ AUTO-BRIGHTNESS LOCK: Re-clamp brightness if iOS tries to raise it mid-recording
+                .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification)) { _ in
+                    if recordingVM.recordingState == .active && dimScreenDuringRecording {
+                        // If system auto-brightness tries to adjust it above 0.01, force it back down
+                        if UIScreen.main.brightness > 0.02 {
+                            UIScreen.main.brightness = 0.01
+                        }
+                    }
+                }
+
+                // 3. Scene Phase Check (Background Safety)
+                .onChange(of: scenePhase) { oldPhase, newPhase in
+                    if newPhase != .active && dimScreenDuringRecording {
+                        UIScreen.main.brightness = originalBrightness
                     }
                 }
             }

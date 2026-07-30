@@ -3,12 +3,14 @@ import AVFoundation
 import UIKit
 import CoreImage
 import CoreGraphics
+import CoreMedia
 
 // MARK: - ClipExtractor
 //
 // After a full session recording ends, this takes the full .mov file
 // and extracts a short trimmed clip for each highlight timestamp.
-// Each exported clip gets a "Powered by ClipIt" watermark burned in.
+// Exports clips with ISO-8601 QuickTime metadata for chronological album sorting
+// and applies the standardized filename schema: ClipIt_YYYYMMDD_HHmmss_[Title].mov
 
 final class ClipExtractor {
 
@@ -38,28 +40,26 @@ final class ClipExtractor {
             let totalDuration = duration.seconds
             let totalCount = highlights.count
             
-            // We use a TaskGroup to extract clips in parallel across multiple CPU cores
+            // TaskGroup extracts clips in parallel across multiple CPU cores
             let updatedClips = await withTaskGroup(of: (Int, Clip).self) { group in
                 
                 for (index, clip) in highlights.enumerated() {
                     let startSecs = max(0, clip.offsetInSession - beforeSeconds)
-                    // 🛡️ Add 0.5s padding if 0s post-roll was chosen to preserve the action climax
                     let adjustedAfter = afterSeconds == 0 ? 0.5 : afterSeconds
                     let endSecs    = min(totalDuration, clip.offsetInSession + adjustedAfter)
 
-                    // 🛡️ SAFEGUARD: Ensure duration is valid. If a user clips at 0.0s with 0s post-roll,
-                    // force a minimum 1-second window to prevent export crashes.
                     let finalEndSecs = (endSecs <= startSecs) ? min(totalDuration, startSecs + 1.0) : endSecs
 
-                    let outputURL = clipOutputURL(for: clip)
+                    let clipDate = Date() // 🌟 Uses current timestamp
+                    let outputURL = clipOutputURL(for: clip, triggeredAt: clipDate)
                     
-                    // Add this extraction task to the parallel execution pool
                     group.addTask {
                         let extracted = await extractClip(
                             from: asset,
                             startSeconds: startSecs,
                             endSeconds: finalEndSecs,
-                            outputURL: outputURL
+                            outputURL: outputURL,
+                            creationDate: clipDate
                         )
 
                         var updated = clip
@@ -72,7 +72,6 @@ final class ClipExtractor {
                     }
                 }
                 
-                // Collect results dynamically as they finish out-of-order
                 var results: [(index: Int, clip: Clip)] = []
                 var completedCount = 0
                 
@@ -80,12 +79,10 @@ final class ClipExtractor {
                     results.append((index, updatedClip))
                     completedCount += 1
                     
-                    // MainActor isolation ensures UI updates happen safely on the main thread
                     let currentCompleted = completedCount
                     progress(currentCompleted, totalCount)
                 }
                 
-                // Sort them back into their original chronological order before returning
                 return results.sorted { $0.index < $1.index }.map { $0.clip }
             }
 
@@ -93,13 +90,14 @@ final class ClipExtractor {
         }
     }
     
-    // MARK: - Single clip extraction with watermark
+    // MARK: - Single clip extraction with EXIF Metadata Injection
 
     private static func extractClip(
         from asset: AVURLAsset,
         startSeconds: Double,
         endSeconds: Double,
-        outputURL: URL
+        outputURL: URL,
+        creationDate: Date
     ) async -> URL? {
         try? FileManager.default.removeItem(at: outputURL)
 
@@ -125,7 +123,6 @@ final class ClipExtractor {
             let preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
             compositionVideoTrack.preferredTransform = preferredTransform
 
-            // 🔥 SAFE MULTI-TRACK AUDIO FIX:
             for sourceAudioTrack in audioTracks {
                 if let compositionAudioTrack = composition.addMutableTrack(
                     withMediaType: .audio,
@@ -153,19 +150,16 @@ final class ClipExtractor {
         exportSession.outputFileType = .mp4
         exportSession.shouldOptimizeForNetworkUse = true
         
-        // 🔥 THE FIX: Use your custom built watermarked composition function!
-        if let watermarkedComposition = buildWatermarkedVideoComposition(for: composition, asset: asset) {
-            exportSession.videoComposition = watermarkedComposition
-        } else {
-            // Fallback composition layout if watermark compilation fails
-            let videoComposition = AVMutableVideoComposition(propertiesOf: composition)
-            exportSession.videoComposition = videoComposition
-        }
+        // 🌟 Inject Chronological Creation Metadata for iOS Photos & Files sorting
+        exportSession.metadata = createChronologicalMetadataItems(for: creationDate)
         
-        // Await the export sequentially to bypass closure warnings entirely!
+        // 🧪 Watermark composition (Optional)
+        // if let watermarkedComposition = buildWatermarkedVideoComposition(for: composition, asset: asset) {
+        //     exportSession.videoComposition = watermarkedComposition
+        // }
+        
         await exportSession.export()
         
-        // Read parameters safely inside the task context scope
         let finalStatus = exportSession.status
         
         if finalStatus == .completed {
@@ -176,7 +170,34 @@ final class ClipExtractor {
         }
     }
 
-    // MARK: - Watermark composition
+    // MARK: - Chronological Metadata Creation Helper
+
+    private static func createChronologicalMetadataItems(for date: Date) -> [AVMetadataItem] {
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let dateString = isoFormatter.string(from: date)
+        
+        var items: [AVMetadataItem] = []
+        
+        // QuickTime metadata key space
+        let qtDateItem = AVMutableMetadataItem()
+        qtDateItem.keySpace = .quickTimeMetadata
+        qtDateItem.key = AVMetadataKey.quickTimeMetadataKeyCreationDate as NSString
+        qtDateItem.value = dateString as NSString
+        qtDateItem.dataType = "com.apple.metadata.datatype.utf8" // 🌟 Direct String identifier avoiding scope issues
+        items.append(qtDateItem)
+        
+        // Common key space fallback
+        let commonDateItem = AVMutableMetadataItem()
+        commonDateItem.keySpace = .common
+        commonDateItem.key = AVMetadataKey.commonKeyCreationDate as NSString
+        commonDateItem.value = dateString as NSString
+        items.append(commonDateItem)
+        
+        return items
+    }
+
+    // MARK: - Watermark Composition (Clean Logo)
 
     private static func buildWatermarkedVideoComposition(
         for composition: AVMutableComposition,
@@ -193,7 +214,6 @@ final class ClipExtractor {
             let sourceImage = request.sourceImage
             let renderSize = sourceImage.extent.size
             
-            // 🛡️ CRITICAL FIX: Block rendering computations if dimensions are invalid or uninitialized
             guard renderSize.width > 0, renderSize.height > 0,
                   cgLogo.width > 0, cgLogo.height > 0,
                   ciLogo.extent.width > 0, ciLogo.extent.height > 0 else {
@@ -201,17 +221,11 @@ final class ClipExtractor {
                 return
             }
             
-            // 📐 ORIENTATION FIX: Base scaling on the shortest dimension of the video frame.
             let referenceDimension = min(renderSize.width, renderSize.height)
-            
-            // --- 1. Proportional Dimensions for Logo ---
             let badgeW = referenceDimension * 0.22
             let badgeH = badgeW * (CGFloat(cgLogo.height) / CGFloat(cgLogo.width))
-            
-            // Tight, uniform padding relative to the shortest side
             let padding = referenceDimension * 0.035
             
-            // Coordinates for Top-Right corner (Core Image origin is Bottom-Left)
             let watermarkX = renderSize.width - badgeW - padding
             let watermarkY = renderSize.height - badgeH - padding
             
@@ -220,73 +234,41 @@ final class ClipExtractor {
                                                    y: badgeH / ciLogo.extent.height))
                 .transformed(by: CGAffineTransform(translationX: watermarkX, y: watermarkY))
             
-            // --- 2. Generate "POWERED BY" Text Layer ---
-            let textFontSize = badgeH * 0.35
-            
-            // 🛡️ CRITICAL FIX: Guard against a 0 or negative font size which breaks text generation layouts
-            guard textFontSize > 0 else {
-                let outputImage = positionedLogo.composited(over: sourceImage)
-                request.finish(with: outputImage, context: nil)
-                return
-            }
-            
-            let textFont = UIFont.systemFont(ofSize: textFontSize, weight: .bold)
-            
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: textFont,
-                .foregroundColor: UIColor.white.withAlphaComponent(0.5)
-            ]
-            let attributedString = NSAttributedString(string: "POWERED BY ", attributes: attributes)
-            
-            guard let textFilter = CIFilter(name: "CIAttributedTextImageGenerator") else {
-                let outputImage = positionedLogo.composited(over: sourceImage)
-                request.finish(with: outputImage, context: nil)
-                return
-            }
-            
-            textFilter.setValue(attributedString, forKey: "inputText")
-            textFilter.setValue(1.0, forKey: "inputScaleFactor")
-            
-            guard let ciText = textFilter.outputImage else {
-                let outputImage = positionedLogo.composited(over: sourceImage)
-                request.finish(with: outputImage, context: nil)
-                return
-            }
-            
-            // --- 3. Dynamic Alignment & NaN Safeguards ---
-            let textW = ciText.extent.width
-            let textH = ciText.extent.height
-            
-            // 🛡️ CRITICAL FIX: Ensure text image extent is valid and finite before performing geometric transformations
-            guard !textW.isNaN && !textW.isInfinite && textW > 0,
-                  !textH.isNaN && !textH.isInfinite && textH > 0 else {
-                let outputImage = positionedLogo.composited(over: sourceImage)
-                request.finish(with: outputImage, context: nil)
-                return
-            }
-            
-            // Anchor text safely to the left edge of the scaled logo
-            let textX = watermarkX - textW
-            let textY = watermarkY + (badgeH - textH) / 2
-            
-            let positionedText = ciText.transformed(by: CGAffineTransform(translationX: textX, y: textY))
-            
-            // --- 4. Composite Layers ---
-            let combinedWatermark = positionedText.composited(over: positionedLogo)
-            let outputImage = combinedWatermark.composited(over: sourceImage)
-            
+            let outputImage = positionedLogo.composited(over: sourceImage)
             request.finish(with: outputImage, context: nil)
         }
         
         return videoComposition
     }
 
-    // MARK: - Output URL
+    // MARK: - Output URL Helper
 
-    private static func clipOutputURL(for clip: Clip) -> URL {
+    private static func clipOutputURL(for clip: Clip, triggeredAt date: Date) -> URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dir  = docs.appendingPathComponent("Clips", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("\(clip.id.uuidString).mov")
+        
+        let filename = ClipFilenameHelper.generateFilename(title: clip.displayName, date: date)
+        return dir.appendingPathComponent(filename)
+    }
+}
+
+// MARK: - Standardized Filename Helper
+
+enum ClipFilenameHelper {
+    static func generateFilename(title: String, date: Date, fileExtension: String = "mov") -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        let dateString = dateFormatter.string(from: date)
+        
+        let invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>| ")
+        let sanitizedTitle = title
+            .components(separatedBy: invalidCharacters)
+            .joined(separator: "_")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+        
+        let cleanTitle = sanitizedTitle.isEmpty ? "Highlight" : sanitizedTitle
+        return "ClipIt_\(dateString)_\(cleanTitle).\(fileExtension)"
     }
 }

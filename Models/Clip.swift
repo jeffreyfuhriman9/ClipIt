@@ -19,6 +19,8 @@ struct Clip: Identifiable, Codable, Equatable {
     var beforeSeconds: Double?
     var afterSeconds: Double?
     
+    var createdAt: Date = Date()
+    
     var isProcessing: Bool {
         return fileURL == nil
     }

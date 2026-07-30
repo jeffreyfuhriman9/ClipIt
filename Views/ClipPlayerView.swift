@@ -292,59 +292,65 @@ private var videoArea: some View {
     }
     
     private var actionBar: some View {
-        HStack {
-            Button {
-                if let url = playerVM.clip.fileURL {
-                    let invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
-                    let sanitizedName = playerVM.clip.displayName.components(separatedBy: invalidCharacters).joined(separator: "_").trimmingCharacters(in: .whitespacesAndNewlines)
-                    let filename = sanitizedName.isEmpty ? "Highlight" : sanitizedName
-                    let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
-                    
-                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(filename).\(ext)")
-                    try? FileManager.default.removeItem(at: tempURL)
-                    try? FileManager.default.copyItem(at: url, to: tempURL)
-                    
-                    shareURL = tempURL
-                    showShareSheet = true
+            HStack {
+                Button {
+                    if let url = playerVM.clip.fileURL {
+                        let clipDate = playerVM.clip.createdAt
+                        let ext = url.pathExtension.isEmpty ? "mov" : url.pathExtension
+                        
+                        // 🌟 Standardized ISO Share Filename
+                        let exportFilename = ClipFilenameHelper.generateFilename(
+                            title: playerVM.clip.displayName,
+                            date: clipDate,
+                            fileExtension: ext
+                        )
+                        
+                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(exportFilename)
+                        try? FileManager.default.removeItem(at: tempURL)
+                        try? FileManager.default.copyItem(at: url, to: tempURL)
+                        
+                        shareURL = tempURL
+                        showShareSheet = true
+                    }
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(themeColor)
+                        .frame(width: 44, height: 44)
+                        .background(Color.white.opacity(0.15))
+                        .clipShape(Circle())
                 }
-            } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 20, weight: .semibold))
+                
+                Spacer()
+                
+                Button(action: { playerVM.toggleSpeed() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "gauge.with.needle")
+                        Text(playerVM.playbackRate == 1.0 ? "1.0x" : playerVM.playbackRate == 0.5 ? "0.5x Slo-Mo" : "0.25x Super Slo-Mo")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 44)
                     .foregroundColor(themeColor)
-                    .frame(width: 44, height: 44)
-                    .background(Color.white.opacity(0.15)) // 🌟 Gray silhouette
-                    .clipShape(Circle())
-            }
-            
-            Spacer()
-            
-            Button(action: { playerVM.toggleSpeed() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "gauge.with.needle")
-                    Text(playerVM.playbackRate == 1.0 ? "1.0x" : playerVM.playbackRate == 0.5 ? "0.5x Slo-Mo" : "0.25x Super Slo-Mo")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .background(Color.white.opacity(0.15))
+                    .clipShape(Capsule())
                 }
-                .padding(.horizontal, 14)
-                .frame(height: 44)
-                .foregroundColor(themeColor)
-                .background(Color.white.opacity(0.15)) // 🌟 Gray pill silhouette
-                .clipShape(Capsule())
+                
+                Spacer()
+                
+                Button(action: { showDeleteConfirmation = true }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(themeColor)
+                        .frame(width: 44, height: 44)
+                        .background(Color.white.opacity(0.15))
+                        .clipShape(Circle())
+                }
             }
-            
-            Spacer()
-            
-            Button(action: { showDeleteConfirmation = true }) {
-                Image(systemName: "trash")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(themeColor)
-                    .frame(width: 44, height: 44)
-                    .background(Color.white.opacity(0.15)) // 🌟 Gray silhouette
-                    .clipShape(Circle())
-            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 1)
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 1)
-    }
+    
     
     private func handleEditTap() {
         if isEditable {

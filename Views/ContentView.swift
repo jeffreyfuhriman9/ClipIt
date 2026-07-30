@@ -58,7 +58,6 @@ struct ContentView: View {
             } message: {
                 Text("The primary device is requesting to import the full-length high-quality master recording.")
             }
-            .lowPowerModeWarning()
             
             // 🌟 GLOBAL IMPORT/EXPORT PROGRESS OVERLAY
             if multipeerManager.isTransferringFile {

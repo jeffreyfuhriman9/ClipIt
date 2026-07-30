@@ -24,6 +24,11 @@ struct HighlightTrimView: View {
     @State private var wasPlayingBeforeDrag = false
     @State private var dragStartTrimStart: Double?
     @State private var dragStartTrimEnd: Double?
+    
+    // Zoomed Window Drag Anchors
+    @State private var dragStartWindowStart: Double?
+    @State private var dragStartWindowEnd: Double?
+    
     @Environment(\.verticalSizeClass) var verticalSizeClass
     
     init(clip: Clip, fullVideoURL: URL, sessionDuration: TimeInterval, onSave: @escaping (Clip) -> Void) {
@@ -54,14 +59,12 @@ struct HighlightTrimView: View {
         sourceDuration
     }
     
-    // Left handle drag
     private var clipStart: Double {
-        min(trimStart, max(0, trimEnd - 5.0))
+        min(trimStart, max(0, trimEnd - 0.5))
     }
     
-    // Right handle drag
     private var clipEnd: Double {
-        max(trimEnd, min(videoDuration, trimStart + 5.0))
+        max(trimEnd, min(videoDuration, trimStart + 0.5))
     }
 
     private var totalLength: Double {
@@ -75,143 +78,128 @@ struct HighlightTrimView: View {
     private var previewURL: URL {
         sourceURL
     }
+
+    // MARK: - Two-Tier Window Math
     
-    private var appleStyleTrimControl: some View {
-        HStack(spacing: 0) {
-            Button {
-                togglePreviewPlayback()
-            } label: {
-                ZStack {
-                    // Play button specs
-                    RoundedRectangle(cornerRadius: 0)
-                        .fill(Color.clear)
-                        .frame(width: 64, height: 64)
-
-                    Image(systemName: isPreviewPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundColor(.white)
-                }
-            }
-            .buttonStyle(.plain)
-            // Divider line between footage and play button
-            Rectangle()
-                .fill(Color.white.opacity(0.28))
-                .frame(width: 2, height: 64)
-                .padding(.trailing, 10)
-
-            trimBar
-                .frame(height: 64)
-                .padding(.trailing, 12)
-        }
-        .frame(height: 64)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(white: 0.18))
-        )
+    private var windowPadding: Double { 15.0 } // 15s padding on left and right
+    
+    private var activeWindowStart: Double {
+        if let locked = dragStartWindowStart { return locked }
+        return max(0, trimStart - windowPadding)
     }
 
-    private enum HandleDirection {
-        case left
-        case right
+    private var activeWindowEnd: Double {
+        if let locked = dragStartWindowEnd { return locked }
+        return min(videoDuration, trimEnd + windowPadding)
     }
+
+    private var activeWindowSpan: Double {
+        max(activeWindowEnd - activeWindowStart, 1.0)
+    }
+
+    // MARK: - Main Body
 
     var body: some View {
-            // 💡 Detects if the phone is flipped sideways
-            let isLandscape = verticalSizeClass == .compact
-            
-            NavigationStack {
-                ZStack {
-                    Color.black.ignoresSafeArea()
+        let isLandscape = verticalSizeClass == .compact
+        
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-                    VStack(spacing: 0) {
-                        previewArea
-                            // 🎯 THE FIX: Instead of a hardcoded 450 height, we let it flex to infinity in landscape.
-                            // The layoutPriority(1) ensures it takes up all leftover space WITHOUT crushing the controls below.
-                            .frame(maxHeight: isLandscape ? .infinity : 450)
-                            .layoutPriority(1)
+                VStack(spacing: 0) {
+                    previewArea
+                        .frame(maxHeight: isLandscape ? .infinity : 420)
+                        .layoutPriority(1)
 
-                        timestampInfo
-                            .padding(.vertical, isLandscape ? 8 : 16)
+                    timestampInfo
+                        .padding(.vertical, isLandscape ? 4 : 10)
 
+                    // TWO-TIER TIMELINE CONTROLS
+                    VStack(spacing: 8) {
+                        // 1. MACRO OVERVIEW BAR (Full Game context)
+                        macroTimeline
+                            .frame(height: 18)
+
+                        // 2. MICRO ZOOMED BAR (Fine handle editing)
                         appleStyleTrimControl
-                            .padding(.horizontal, isLandscape ? 48 : 24) // Adds extra horizontal safe-area padding in landscape
-                            .padding(.bottom, isLandscape ? 8 : 20)
-                            .padding(.top, isLandscape ? 4 : 12)
+                    }
+                    .padding(.horizontal, isLandscape ? 48 : 20)
+                    .padding(.bottom, isLandscape ? 6 : 14)
+                    .padding(.top, isLandscape ? 2 : 6)
 
-                        Divider()
-                            .overlay(Color(white: 0.2))
+                    Divider()
+                        .overlay(Color(white: 0.2))
 
-                        // Only push with a Spacer if we have massive vertical height (Portrait)
-                        if !isLandscape {
-                            Spacer()
-                        }
+                    if !isLandscape {
+                        Spacer()
+                    }
 
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                        Text("Clip duration: \(formatPreciseTime(totalLength))")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, isLandscape ? 6 : 0)
+                    .padding(.bottom, isLandscape ? 8 : 18)
+                }
+            }
+            .navigationTitle(liveDisplayTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .preferredColorScheme(.dark)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        previewPlayer?.pause()
+                        previewPlayer?.replaceCurrentItem(with: nil)
+                        previewPlayer = nil
+                        dismiss()
+                    }
+                    .foregroundColor(.white)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    if isExporting {
                         HStack(spacing: 6) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 13))
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(0.8)
+                            Text(exportProgress)
+                                .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text("Clip will be \(formatPreciseTime(totalLength))")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
                         }
-                        .padding(.top, isLandscape ? 8 : 0)
-                        .padding(.bottom, isLandscape ? 12 : 24)
+                    } else {
+                        Button("Save") { exportClip() }
+                            .fontWeight(.semibold)
+                            .foregroundColor(.red)
                     }
                 }
-                .navigationTitle(liveDisplayTitle)
-                .navigationBarTitleDisplayMode(.inline)
-                .preferredColorScheme(.dark)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            previewPlayer?.pause()
-                            previewPlayer?.replaceCurrentItem(with: nil)
-                            previewPlayer = nil
-                            dismiss()
-                        }
-                        .foregroundColor(.white)
-                    }
-
-                    ToolbarItem(placement: .confirmationAction) {
-                        if isExporting {
-                            HStack(spacing: 6) {
-                                ProgressView()
-                                    .tint(.white)
-                                    .scaleEffect(0.8)
-                                Text(exportProgress)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } else {
-                            Button("Save") { exportClip() }
-                                .fontWeight(.semibold)
-                                .foregroundColor(.red)
-                        }
-                    }
-                }
-            }
-            .onAppear {
-                loadSourceDurationIfNeeded()
-                playheadTime = clipStart
-                setupPreview()
-            }
-            .onChange(of: trimStart) { _, _ in
-                if playheadTime < clipStart {
-                    playheadTime = clipStart
-                }
-            }
-            .onChange(of: trimEnd) { _, _ in
-                if playheadTime > clipEnd {
-                    playheadTime = clipEnd
-                }
-            }
-            .onDisappear {
-                removeTimeObserver()
-                previewPlayer?.pause()
-                previewPlayer?.replaceCurrentItem(with: nil)
-                previewPlayer = nil
             }
         }
+        .onAppear {
+            loadSourceDurationIfNeeded()
+            playheadTime = clipStart
+            setupPreview()
+        }
+        .onChange(of: trimStart) { _, _ in
+            if playheadTime < clipStart {
+                playheadTime = clipStart
+            }
+        }
+        .onChange(of: trimEnd) { _, _ in
+            if playheadTime > clipEnd {
+                playheadTime = clipEnd
+            }
+        }
+        .onDisappear {
+            removeTimeObserver()
+            previewPlayer?.pause()
+            previewPlayer?.replaceCurrentItem(with: nil)
+            previewPlayer = nil
+        }
+    }
     
     private var previewArea: some View {
         ZStack {
@@ -225,63 +213,126 @@ struct HighlightTrimView: View {
         }
     }
 
-    private var timestampInfo: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 3) {
-                Text("Start")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(white: 0.5))
-                Text(formatTime(clipStart))
-                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.blue)
-            }
-            .frame(maxWidth: .infinity)
-
-            Rectangle()
-                .fill(Color(white: 0.25))
-                .frame(width: 1, height: 32)
-
-            VStack(spacing: 3) {
-                Text("Playhead")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(white: 0.5))
-                Text(formatPreciseTime(displayedTime))
-                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white)
-            }
-            .frame(maxWidth: .infinity)
-
-            Rectangle()
-                .fill(Color(white: 0.25))
-                .frame(width: 1, height: 32)
-
-            VStack(spacing: 3) {
-                Text("End")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(white: 0.5))
-                Text(formatTime(clipEnd))
-                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.red)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .padding(.horizontal, 16)
-    }
-
-    private var trimBar: some View {
+    // MARK: - 1. MACRO TIMELINE (Full Recording Overview Bar)
+    
+    private var macroTimeline: some View {
         GeometryReader { geo in
             let width = geo.size.width
             let total = max(videoDuration, 1)
 
-            let startX = CGFloat(trimStart / total) * width
-            let endX = CGFloat(trimEnd / total) * width
-            let selectionWidth = endX - startX
+            let winStartX = CGFloat(activeWindowStart / total) * width
+            let winEndX = CGFloat(activeWindowEnd / total) * width
+            let winWidth = max(4, winEndX - winStartX)
+
+            let clipStartX = CGFloat(trimStart / total) * width
+            let clipEndX = CGFloat(trimEnd / total) * width
+            let clipWidth = max(2, clipEndX - clipStartX)
+
             let playheadX = CGFloat(displayedTime / total) * width
 
+            ZStack(alignment: .leading) {
+                // Background Track (Full Video)
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color(white: 0.2))
+                    .frame(height: 14)
+
+                // Yellow Clip Region relative to full recording
+                Rectangle()
+                    .fill(Color.yellow.opacity(0.8))
+                    .frame(width: clipWidth, height: 14)
+                    .offset(x: clipStartX)
+
+                // White Bounding Box (Shows where the Zoomed Micro Window is)
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(Color.white, lineWidth: 1.5)
+                    .background(Color.white.opacity(0.15))
+                    .frame(width: winWidth, height: 16)
+                    .offset(x: winStartX)
+
+                // Mini Playhead indicator
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(width: 2, height: 18)
+                    .offset(x: playheadX - 1)
+            }
+            .contentShape(Rectangle())
+            // Tap/Drag on Macro bar jumps the clip window anywhere in the video!
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        beginDragging()
+                        let clampedX = max(0, min(width, value.location.x))
+                        let norm = clampedX / width
+                        let targetTime = Double(norm) * total
+                        
+                        let currentLen = totalLength
+                        let newStart = max(0, min(targetTime - currentLen / 2, videoDuration - currentLen))
+                        let newEnd = min(videoDuration, newStart + currentLen)
+                        
+                        trimStart = newStart
+                        trimEnd = newEnd
+                        playheadTime = newStart
+                        draggingTime = newStart
+                        seekPreview(to: newStart)
+                    }
+                    .onEnded { _ in
+                        endDragging(keepPaused: true)
+                    }
+            )
+        }
+    }
+
+    // MARK: - 2. MICRO TIMELINE (Zoomed High-Resolution Handle View)
+
+    private var appleStyleTrimControl: some View {
+        HStack(spacing: 0) {
+            Button {
+                togglePreviewPlayback()
+            } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 0)
+                        .fill(Color.clear)
+                        .frame(width: 64, height: 64)
+
+                    Image(systemName: isPreviewPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+            }
+            .buttonStyle(.plain)
+            
+            Rectangle()
+                .fill(Color.white.opacity(0.28))
+                .frame(width: 2, height: 64)
+                .padding(.trailing, 10)
+
+            microTrimBar
+                .frame(height: 64)
+                .padding(.trailing, 12)
+        }
+        .frame(height: 64)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(white: 0.18))
+        )
+    }
+
+    private var microTrimBar: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let wStart = activeWindowStart
+            let wSpan = activeWindowSpan
+
+            // Convert trim times into local Zoomed Window space
+            let startX = CGFloat((trimStart - wStart) / wSpan) * width
+            let endX = CGFloat((trimEnd - wStart) / wSpan) * width
+            let selectionWidth = max(0, endX - startX)
+            let playheadX = CGFloat((displayedTime - wStart) / wSpan) * width
+
             ZStack(alignment: .topLeading) {
-                // full timeline background
+                // Timeline Background
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(white: 0.35))
+                    .fill(Color(white: 0.32))
                     .frame(height: 52)
                     .offset(y: 6)
                     .contentShape(Rectangle())
@@ -291,8 +342,8 @@ struct HighlightTrimView: View {
                                 beginDragging()
 
                                 let clampedX = max(0, min(width, value.location.x))
-                                let normalized = max(0, min(1, clampedX / width))
-                                let newTime = max(trimStart, min(trimEnd, Double(normalized) * total))
+                                let normalized = clampedX / width
+                                let newTime = max(trimStart, min(trimEnd, wStart + Double(normalized) * wSpan))
 
                                 playheadTime = newTime
                                 draggingTime = newTime
@@ -303,25 +354,25 @@ struct HighlightTrimView: View {
                             }
                     )
 
-                // left dimmed region
+                // Dimmed Left Non-Selected Area
                 Rectangle()
-                    .fill(Color.black.opacity(0.28))
+                    .fill(Color.black.opacity(0.35))
                     .frame(width: max(0, startX), height: 52)
                     .offset(x: 0, y: 6)
 
-                // right dimmed region
+                // Dimmed Right Non-Selected Area
                 Rectangle()
-                    .fill(Color.black.opacity(0.28))
+                    .fill(Color.black.opacity(0.35))
                     .frame(width: max(0, width - endX), height: 52)
                     .offset(x: endX, y: 6)
 
-                // yellow connected trim frame
+                // Yellow Connected Trim Border
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(Color.yellow, lineWidth: 6)
                     .frame(width: selectionWidth, height: 52)
                     .offset(x: startX, y: 6)
 
-                // left yellow handle
+                // Left Yellow Handle
                 appleHandle(direction: .left)
                     .offset(x: startX - 6, y: 2)
                     .gesture(
@@ -331,24 +382,28 @@ struct HighlightTrimView: View {
 
                                 if dragStartTrimStart == nil {
                                     dragStartTrimStart = trimStart
+                                    dragStartWindowStart = activeWindowStart
+                                    dragStartWindowEnd = activeWindowEnd
                                 }
 
-                                let secondsPerPoint = total / width
+                                let secondsPerPoint = wSpan / width
                                 let startingTrim = dragStartTrimStart ?? trimStart
                                 let newTime = startingTrim + Double(value.translation.width) * secondsPerPoint
 
-                                trimStart = min(max(0, newTime), trimEnd - 5.0)
+                                trimStart = min(max(0, newTime), trimEnd - 0.5)
                                 playheadTime = trimStart
                                 draggingTime = trimStart
                                 seekPreview(to: trimStart)
                             }
                             .onEnded { _ in
                                 dragStartTrimStart = nil
+                                dragStartWindowStart = nil
+                                dragStartWindowEnd = nil
                                 endDragging(keepPaused: true)
                             }
                     )
 
-                // right yellow handle
+                // Right Yellow Handle
                 appleHandle(direction: .right)
                     .offset(x: endX - 18, y: 2)
                     .gesture(
@@ -358,33 +413,37 @@ struct HighlightTrimView: View {
 
                                 if dragStartTrimEnd == nil {
                                     dragStartTrimEnd = trimEnd
+                                    dragStartWindowStart = activeWindowStart
+                                    dragStartWindowEnd = activeWindowEnd
                                 }
 
-                                let secondsPerPoint = total / width
+                                let secondsPerPoint = wSpan / width
                                 let startingTrim = dragStartTrimEnd ?? trimEnd
                                 let newTime = startingTrim + Double(value.translation.width) * secondsPerPoint
 
-                                trimEnd = max(min(videoDuration, newTime), trimStart + 5.0)
+                                trimEnd = max(min(videoDuration, newTime), trimStart + 0.5)
                                 playheadTime = trimEnd
                                 draggingTime = trimEnd
                                 seekPreview(to: trimEnd)
                             }
                             .onEnded { _ in
                                 dragStartTrimEnd = nil
+                                dragStartWindowStart = nil
+                                dragStartWindowEnd = nil
                                 endDragging(keepPaused: true)
                             }
                     )
 
-                // playhead
+                // Playhead Bar
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color.white)
                     .frame(width: 3, height: 54)
                     .offset(x: playheadX - 1.5, y: 6)
                     .allowsHitTesting(false)
 
-                // time bubble while dragging
+                // Floating Time Bubble during scrub
                 if let activeDragTime = draggingTime {
-                    let bubbleX = CGFloat(activeDragTime / total) * width
+                    let bubbleX = CGFloat((activeDragTime - wStart) / wSpan) * width
 
                     Text(formatPreciseTime(activeDragTime))
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -394,8 +453,7 @@ struct HighlightTrimView: View {
                         .background(Color(white: 0.12))
                         .clipShape(Capsule())
                         .overlay(
-                            Capsule()
-                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                            Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1)
                         )
                         .offset(
                             x: max(0, min(width - 86, bubbleX - 43)),
@@ -407,6 +465,8 @@ struct HighlightTrimView: View {
         .frame(height: 64)
     }
 
+    private enum HandleDirection { case left, right }
+
     private func appleHandle(direction: HandleDirection) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8)
@@ -416,9 +476,117 @@ struct HighlightTrimView: View {
             Image(systemName: direction == .left ? "chevron.left" : "chevron.right")
                 .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.black)
-                .scaleEffect(x: 0.8, y:1.8)
+                .scaleEffect(x: 0.8, y: 1.8)
         }
     }
+
+    // MARK: - Timestamp Header Info & Micro-Steppers
+
+    private var timestampInfo: some View {
+        HStack(spacing: 0) {
+            // Start Handle
+            VStack(spacing: 3) {
+                Text("Start")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(white: 0.5))
+                Text(formatPreciseTime(clipStart))
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.blue)
+                
+                HStack(spacing: 6) {
+                    Button { stepStart(by: -0.1) } label: {
+                        Image(systemName: "minus")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 26, height: 20)
+                            .background(Color(white: 0.22))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                    Button { stepStart(by: 0.1) } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 26, height: 20)
+                            .background(Color(white: 0.22))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(maxWidth: .infinity)
+
+            Rectangle()
+                .fill(Color(white: 0.25))
+                .frame(width: 1, height: 36)
+
+            // Playhead Center
+            VStack(spacing: 3) {
+                Text("Playhead")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(white: 0.5))
+                Text(formatPreciseTime(displayedTime))
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.white)
+            }
+            .frame(maxWidth: .infinity)
+
+            Rectangle()
+                .fill(Color(white: 0.25))
+                .frame(width: 1, height: 36)
+
+            // End Handle
+            VStack(spacing: 3) {
+                Text("End")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(white: 0.5))
+                Text(formatPreciseTime(clipEnd))
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.red)
+                
+                HStack(spacing: 6) {
+                    Button { stepEnd(by: -0.1) } label: {
+                        Image(systemName: "minus")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 26, height: 20)
+                            .background(Color(white: 0.22))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                    Button { stepEnd(by: 0.1) } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 26, height: 20)
+                            .background(Color(white: 0.22))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Helper Micro-Step Actions
+
+    private func stepStart(by amount: Double) {
+        let newTime = min(max(0, trimStart + amount), trimEnd - 0.5)
+        trimStart = newTime
+        playheadTime = newTime
+        draggingTime = nil
+        seekPreview(to: newTime)
+    }
+
+    private func stepEnd(by amount: Double) {
+        let newTime = max(min(videoDuration, trimEnd + amount), trimStart + 0.5)
+        trimEnd = newTime
+        playheadTime = newTime
+        draggingTime = nil
+        seekPreview(to: newTime)
+    }
+
+    // MARK: - Player & Preview Setup
 
     private func setupPreview() {
         let start = min(playheadTime, max(videoDuration, 0))
@@ -560,6 +728,8 @@ struct HighlightTrimView: View {
         return cleaned.isEmpty ? clip.displayName : cleaned
     }
 
+    // MARK: - Export Logic
+
     private func exportClip() {
         isExporting = true
         exportProgress = "Exporting highlights..."
@@ -567,7 +737,6 @@ struct HighlightTrimView: View {
         let asset = AVURLAsset(url: previewURL)
 
         Task {
-            // 1. Setup export session for the TRIM
             guard let exportSession = AVAssetExportSession(
                 asset: asset,
                 presetName: AVAssetExportPresetHighestQuality
@@ -584,7 +753,6 @@ struct HighlightTrimView: View {
 
             try? FileManager.default.createDirectory(at: clipsDirectory, withIntermediateDirectories: true)
 
-            // 2. Create URLs for the temp trim and the final watermarked video
             let baseUUID = UUID().uuidString
             let tempTrimURL = clipsDirectory.appendingPathComponent("\(clip.id.uuidString)-temp-\(baseUUID).mp4")
             let finalOutputURL = clipsDirectory.appendingPathComponent("\(clip.id.uuidString)-trimmed-\(baseUUID).mp4")
@@ -600,7 +768,6 @@ struct HighlightTrimView: View {
                 end: CMTime(seconds: trimEnd, preferredTimescale: 600)
             )
 
-            // 3. Export the raw trim
             await exportSession.export()
 
             guard exportSession.status == .completed else {
@@ -611,7 +778,6 @@ struct HighlightTrimView: View {
                 return
             }
             
-            // 4. APPLY THE WATERMARK
             await MainActor.run { exportProgress = "Applying watermark..." }
             
             WatermarkService.applyWatermark(inputURL: tempTrimURL, outputURL: finalOutputURL) { result in
@@ -619,12 +785,10 @@ struct HighlightTrimView: View {
                     isExporting = false
                     exportProgress = ""
                     
-                    // Clean up the temporary file now that we are done with it
                     try? FileManager.default.removeItem(at: tempTrimURL)
                     
                     switch result {
                     case .success(let watermarkedURL):
-                        // 5. Build the final Clip model using the watermarked URL
                         let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
                         
                         let savedClip = Clip(
@@ -632,7 +796,7 @@ struct HighlightTrimView: View {
                             sessionID: clip.sessionID,
                             triggeredAt: clip.triggeredAt,
                             offsetInSession: clip.offsetInSession,
-                            fileURL: watermarkedURL, // 👈 Points to the final watermarked file
+                            fileURL: watermarkedURL,
                             duration: trimEnd - trimStart,
                             isUploaded: clip.isUploaded,
                             highlightIndex: clip.highlightIndex,
@@ -650,8 +814,6 @@ struct HighlightTrimView: View {
                         
                     case .failure(let error):
                         print("Watermark failed: \(error.localizedDescription)")
-                        // Fallback: If watermark fails, at least save the raw trimmed video
-                        // You can adjust this to throw an alert instead if you strictly require watermarks
                         let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
                         let savedClip = Clip(
                             id: clip.id,
@@ -673,11 +835,6 @@ struct HighlightTrimView: View {
                 }
             }
         }
-    }
-
-    private func formatTime(_ seconds: Double) -> String {
-        let s = Int(seconds)
-        return String(format: "%d:%02d", s / 60, s % 60)
     }
 
     private func formatPreciseTime(_ seconds: Double) -> String {

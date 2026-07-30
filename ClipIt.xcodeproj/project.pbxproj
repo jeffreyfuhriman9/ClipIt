@@ -14,10 +14,8 @@
 		1F99325B30191D5D009A6D01 /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99323C30191D5D009A6D01 /* CameraManager.swift */; };
 		1F99325C30191D5D009A6D01 /* RecordSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99325230191D5D009A6D01 /* RecordSettingsSheet.swift */; };
 		1F99325D30191D5D009A6D01 /* RecordingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99324730191D5D009A6D01 /* RecordingViewModel.swift */; };
-		1F99325E30191D5D009A6D01 /* SupabaseConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99323F30191D5D009A6D01 /* SupabaseConfig.swift */; };
 		1F99325F30191D5D009A6D01 /* MultipeerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99323530191D5D009A6D01 /* MultipeerManager.swift */; };
 		1F99326030191D5D009A6D01 /* DeviceStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99324E30191D5D009A6D01 /* DeviceStatusView.swift */; };
-		1F99326130191D5D009A6D01 /* SupabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99324030191D5D009A6D01 /* SupabaseService.swift */; };
 		1F99326230191D5D009A6D01 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99324D30191D5D009A6D01 /* ContentView.swift */; };
 		1F99326330191D5D009A6D01 /* BLEViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99324630191D5D009A6D01 /* BLEViewModel.swift */; };
 		1F99326430191D5D009A6D01 /* CallMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99323B30191D5D009A6D01 /* CallMonitor.swift */; };
@@ -29,21 +27,14 @@
 		1F99326A30191D5D009A6D01 /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99324A30191D5D009A6D01 /* CameraPreviewView.swift */; };
 		1F99326B30191D5D009A6D01 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99325130191D5D009A6D01 /* OnboardingView.swift */; };
 		1F99326C30191D5D009A6D01 /* AllViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99324930191D5D009A6D01 /* AllViews.swift */; };
-		1F99326D30191D5D009A6D01 /* SupabaseModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99323230191D5D009A6D01 /* SupabaseModels.swift */; };
 		1F99326E30191D5D009A6D01 /* RecordingMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99323130191D5D009A6D01 /* RecordingMode.swift */; };
 		1F99326F30191D5D009A6D01 /* Clip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99322F30191D5D009A6D01 /* Clip.swift */; };
 		1F99327030191D5D009A6D01 /* HighlightProgressBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99324F30191D5D009A6D01 /* HighlightProgressBarView.swift */; };
 		1F99327130191D5D009A6D01 /* HighlightTrimView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99325030191D5D009A6D01 /* HighlightTrimView.swift */; };
 		1F99327230191D5D009A6D01 /* BufferManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99323A30191D5D009A6D01 /* BufferManager.swift */; };
 		1F99327330191D5D009A6D01 /* RecordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99325330191D5D009A6D01 /* RecordView.swift */; };
-		1F99327430191D5D009A6D01 /* Secrets.plist.example in Resources */ = {isa = PBXBuildFile; fileRef = 1F99323930191D5D009A6D01 /* Secrets.plist.example */; };
 		1F99327630191D5D009A6D01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1F99322C30191D5D009A6D01 /* Assets.xcassets */; };
-		1F99327730191D5D009A6D01 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 1F99323730191D5D009A6D01 /* README.md */; };
-		1F99327830191D5D009A6D01 /* Secrets.plist in Resources */ = {isa = PBXBuildFile; fileRef = 1F99323830191D5D009A6D01 /* Secrets.plist */; };
-		1F99327930191D5D009A6D01 /* 001_clipit_schema.sql in Resources */ = {isa = PBXBuildFile; fileRef = 1F99324330191D5D009A6D01 /* 001_clipit_schema.sql */; };
-		1F99327C30193409009A6D01 /* AuthGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99327B30193404009A6D01 /* AuthGateView.swift */; };
-		1F99327E3019370C009A6D01 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99327D30193707009A6D01 /* AuthViewModel.swift */; };
-		1F99328030193739009A6D01 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99327F30193737009A6D01 /* LoginView.swift */; };
+		1F99328A301BDC2E009A6D01 /* KeepScreenAwakeModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F993289301BDC2D009A6D01 /* KeepScreenAwakeModifier.swift */; };
 		1FA0B76B2FD8A04B009B0DCF /* CallKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FA0B76A2FD8A04B009B0DCF /* CallKit.framework */; };
 /* End PBXBuildFile section */
 
@@ -53,21 +44,14 @@
 		1F99322F30191D5D009A6D01 /* Clip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Clip.swift; sourceTree = "<group>"; };
 		1F99323030191D5D009A6D01 /* ClipItApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipItApp.swift; sourceTree = "<group>"; };
 		1F99323130191D5D009A6D01 /* RecordingMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingMode.swift; sourceTree = "<group>"; };
-		1F99323230191D5D009A6D01 /* SupabaseModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseModels.swift; sourceTree = "<group>"; };
 		1F99323430191D5D009A6D01 /* MultiCamConnectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiCamConnectionSheet.swift; sourceTree = "<group>"; };
 		1F99323530191D5D009A6D01 /* MultipeerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultipeerManager.swift; sourceTree = "<group>"; };
-		1F99323730191D5D009A6D01 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
-		1F99323830191D5D009A6D01 /* Secrets.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Secrets.plist; sourceTree = "<group>"; };
-		1F99323930191D5D009A6D01 /* Secrets.plist.example */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Secrets.plist.example; sourceTree = "<group>"; };
 		1F99323A30191D5D009A6D01 /* BufferManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BufferManager.swift; sourceTree = "<group>"; };
 		1F99323B30191D5D009A6D01 /* CallMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallMonitor.swift; sourceTree = "<group>"; };
 		1F99323C30191D5D009A6D01 /* CameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
 		1F99323D30191D5D009A6D01 /* ClipExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipExtractor.swift; sourceTree = "<group>"; };
 		1F99323E30191D5D009A6D01 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
-		1F99323F30191D5D009A6D01 /* SupabaseConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseConfig.swift; sourceTree = "<group>"; };
-		1F99324030191D5D009A6D01 /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseService.swift; sourceTree = "<group>"; };
 		1F99324130191D5D009A6D01 /* WatermarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkService.swift; sourceTree = "<group>"; };
-		1F99324330191D5D009A6D01 /* 001_clipit_schema.sql */ = {isa = PBXFileReference; lastKnownFileType = text; path = 001_clipit_schema.sql; sourceTree = "<group>"; };
 		1F99324630191D5D009A6D01 /* BLEViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEViewModel.swift; sourceTree = "<group>"; };
 		1F99324730191D5D009A6D01 /* RecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingViewModel.swift; sourceTree = "<group>"; };
 		1F99324930191D5D009A6D01 /* AllViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllViews.swift; sourceTree = "<group>"; };
@@ -82,9 +66,8 @@
 		1F99325230191D5D009A6D01 /* RecordSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordSettingsSheet.swift; sourceTree = "<group>"; };
 		1F99325330191D5D009A6D01 /* RecordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordView.swift; sourceTree = "<group>"; };
 		1F99325430191D5D009A6D01 /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
-		1F99327B30193404009A6D01 /* AuthGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthGateView.swift; sourceTree = "<group>"; };
-		1F99327D30193707009A6D01 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
-		1F99327F30193737009A6D01 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		1F993286301BDA3C009A6D01 /* Untitled.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Untitled.swift; sourceTree = "<group>"; };
+		1F993289301BDC2D009A6D01 /* KeepScreenAwakeModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepScreenAwakeModifier.swift; sourceTree = "<group>"; };
 		1FA0B76A2FD8A04B009B0DCF /* CallKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CallKit.framework; path = System/Library/Frameworks/CallKit.framework; sourceTree = SDKROOT; };
 		1FE9223D2F86EBD100ED9558 /* Clipit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Clipit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -108,7 +91,6 @@
 				1F99322F30191D5D009A6D01 /* Clip.swift */,
 				1F99323030191D5D009A6D01 /* ClipItApp.swift */,
 				1F99323130191D5D009A6D01 /* RecordingMode.swift */,
-				1F99323230191D5D009A6D01 /* SupabaseModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -125,38 +107,21 @@
 		1F99324230191D5D009A6D01 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				1F993289301BDC2D009A6D01 /* KeepScreenAwakeModifier.swift */,
 				1F99323A30191D5D009A6D01 /* BufferManager.swift */,
 				1F99323B30191D5D009A6D01 /* CallMonitor.swift */,
 				1F99323C30191D5D009A6D01 /* CameraManager.swift */,
 				1F99323D30191D5D009A6D01 /* ClipExtractor.swift */,
 				1F99323E30191D5D009A6D01 /* NotificationManager.swift */,
-				1F99323F30191D5D009A6D01 /* SupabaseConfig.swift */,
-				1F99324030191D5D009A6D01 /* SupabaseService.swift */,
 				1F99324130191D5D009A6D01 /* WatermarkService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
 		};
-		1F99324430191D5D009A6D01 /* migrations */ = {
-			isa = PBXGroup;
-			children = (
-				1F99324330191D5D009A6D01 /* 001_clipit_schema.sql */,
-			);
-			path = migrations;
-			sourceTree = "<group>";
-		};
-		1F99324530191D5D009A6D01 /* supabase */ = {
-			isa = PBXGroup;
-			children = (
-				1F99324430191D5D009A6D01 /* migrations */,
-			);
-			path = supabase;
-			sourceTree = "<group>";
-		};
 		1F99324830191D5D009A6D01 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
-				1F99327D30193707009A6D01 /* AuthViewModel.swift */,
+				1F993286301BDA3C009A6D01 /* Untitled.swift */,
 				1F99324630191D5D009A6D01 /* BLEViewModel.swift */,
 				1F99324730191D5D009A6D01 /* RecordingViewModel.swift */,
 			);
@@ -166,8 +131,6 @@
 		1F99325530191D5D009A6D01 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				1F99327F30193737009A6D01 /* LoginView.swift */,
-				1F99327B30193404009A6D01 /* AuthGateView.swift */,
 				1F99324930191D5D009A6D01 /* AllViews.swift */,
 				1F99324A30191D5D009A6D01 /* CameraPreviewView.swift */,
 				1F99324B30191D5D009A6D01 /* ClipPlayerView.swift */,
@@ -199,11 +162,7 @@
 				1F99322E30191D5D009A6D01 /* Info.plist */,
 				1F99323330191D5D009A6D01 /* Models */,
 				1F99323630191D5D009A6D01 /* Multiview */,
-				1F99323730191D5D009A6D01 /* README.md */,
-				1F99323830191D5D009A6D01 /* Secrets.plist */,
-				1F99323930191D5D009A6D01 /* Secrets.plist.example */,
 				1F99324230191D5D009A6D01 /* Services */,
-				1F99324530191D5D009A6D01 /* supabase */,
 				1F99324830191D5D009A6D01 /* ViewModels */,
 				1F99325530191D5D009A6D01 /* Views */,
 				1FA0B7692FD8A04A009B0DCF /* Frameworks */,
@@ -285,11 +244,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1F99327430191D5D009A6D01 /* Secrets.plist.example in Resources */,
 				1F99327630191D5D009A6D01 /* Assets.xcassets in Resources */,
-				1F99327730191D5D009A6D01 /* README.md in Resources */,
-				1F99327830191D5D009A6D01 /* Secrets.plist in Resources */,
-				1F99327930191D5D009A6D01 /* 001_clipit_schema.sql in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -306,25 +261,20 @@
 				1F99325B30191D5D009A6D01 /* CameraManager.swift in Sources */,
 				1F99325C30191D5D009A6D01 /* RecordSettingsSheet.swift in Sources */,
 				1F99325D30191D5D009A6D01 /* RecordingViewModel.swift in Sources */,
-				1F99325E30191D5D009A6D01 /* SupabaseConfig.swift in Sources */,
 				1F99325F30191D5D009A6D01 /* MultipeerManager.swift in Sources */,
 				1F99326030191D5D009A6D01 /* DeviceStatusView.swift in Sources */,
-				1F99326130191D5D009A6D01 /* SupabaseService.swift in Sources */,
 				1F99326230191D5D009A6D01 /* ContentView.swift in Sources */,
 				1F99326330191D5D009A6D01 /* BLEViewModel.swift in Sources */,
 				1F99326430191D5D009A6D01 /* CallMonitor.swift in Sources */,
 				1F99326530191D5D009A6D01 /* ClipTitleEditView.swift in Sources */,
-				1F99327C30193409009A6D01 /* AuthGateView.swift in Sources */,
 				1F99326630191D5D009A6D01 /* MultiCamConnectionSheet.swift in Sources */,
 				1F99326730191D5D009A6D01 /* ClipPlayerView.swift in Sources */,
 				1F99326830191D5D009A6D01 /* ShareSheet.swift in Sources */,
+				1F99328A301BDC2E009A6D01 /* KeepScreenAwakeModifier.swift in Sources */,
 				1F99326930191D5D009A6D01 /* NotificationManager.swift in Sources */,
 				1F99326A30191D5D009A6D01 /* CameraPreviewView.swift in Sources */,
-				1F99327E3019370C009A6D01 /* AuthViewModel.swift in Sources */,
 				1F99326B30191D5D009A6D01 /* OnboardingView.swift in Sources */,
-				1F99328030193739009A6D01 /* LoginView.swift in Sources */,
 				1F99326C30191D5D009A6D01 /* AllViews.swift in Sources */,
-				1F99326D30191D5D009A6D01 /* SupabaseModels.swift in Sources */,
 				1F99326E30191D5D009A6D01 /* RecordingMode.swift in Sources */,
 				1F99326F30191D5D009A6D01 /* Clip.swift in Sources */,
 				1F99327030191D5D009A6D01 /* HighlightProgressBarView.swift in Sources */,
