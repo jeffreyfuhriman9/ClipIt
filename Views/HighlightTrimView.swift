@@ -104,7 +104,7 @@ struct HighlightTrimView: View {
         
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea()
+                Color.white.ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     previewArea
@@ -137,10 +137,10 @@ struct HighlightTrimView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "clock")
                             .font(.system(size: 13))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.cosmosBlue)
                         Text("Clip duration: \(formatPreciseTime(totalLength))")
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.cosmosBlue)
                     }
                     .padding(.top, isLandscape ? 6 : 0)
                     .padding(.bottom, isLandscape ? 8 : 18)
@@ -148,7 +148,7 @@ struct HighlightTrimView: View {
             }
             .navigationTitle(liveDisplayTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(.light)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -157,7 +157,7 @@ struct HighlightTrimView: View {
                         previewPlayer = nil
                         dismiss()
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(.cosmosBlue.opacity(0.85))
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
@@ -170,10 +170,32 @@ struct HighlightTrimView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
+                    } else if clip.highlightIndex == nil {
+                        // 🌟 ONLY ON FULL RECORDINGS: Dropdown menu with 2 options
+                        Menu {
+                            Button {
+                                exportClip(asNewClip: false)
+                            } label: {
+                                Label("Save Video", systemImage: "video.badge.checkmark")
+                            }
+
+                            Button {
+                                exportClip(asNewClip: true)
+                            } label: {
+                                Label("Save Video as New Clip", systemImage: "video.badge.plus")
+                            }
+                        } label: {
+                            Text("Save")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.crimsonBlaze)
+                        }
                     } else {
-                        Button("Save") { exportClip() }
-                            .fontWeight(.semibold)
-                            .foregroundColor(.red)
+                        // Standard clip save (when editing an already extracted highlight)
+                        Button("Save") {
+                            exportClip(asNewClip: false)
+                        }
+                        .fontWeight(.semibold)
+                        .foregroundColor(.crimsonBlaze)
                     }
                 }
             }
@@ -233,12 +255,12 @@ struct HighlightTrimView: View {
             ZStack(alignment: .leading) {
                 // Background Track (Full Video)
                 RoundedRectangle(cornerRadius: 3)
-                    .fill(Color(white: 0.2))
+                    .fill(Color(white: 0.22))
                     .frame(height: 14)
 
                 // Yellow Clip Region relative to full recording
                 Rectangle()
-                    .fill(Color.yellow.opacity(0.8))
+                    .fill(Color.yellow)
                     .frame(width: clipWidth, height: 14)
                     .offset(x: clipStartX)
 
@@ -296,7 +318,7 @@ struct HighlightTrimView: View {
 
                     Image(systemName: isPreviewPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 24, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.crimsonBlaze)
                 }
             }
             .buttonStyle(.plain)
@@ -313,7 +335,7 @@ struct HighlightTrimView: View {
         .frame(height: 64)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(white: 0.18))
+                .fill(Color(white: 0.75))
         )
     }
 
@@ -390,7 +412,7 @@ struct HighlightTrimView: View {
                                 let startingTrim = dragStartTrimStart ?? trimStart
                                 let newTime = startingTrim + Double(value.translation.width) * secondsPerPoint
 
-                                trimStart = min(max(0, newTime), trimEnd - 0.5)
+                                trimStart = min(max(0, newTime), trimEnd - 1.0)
                                 playheadTime = trimStart
                                 draggingTime = trimStart
                                 seekPreview(to: trimStart)
@@ -421,7 +443,7 @@ struct HighlightTrimView: View {
                                 let startingTrim = dragStartTrimEnd ?? trimEnd
                                 let newTime = startingTrim + Double(value.translation.width) * secondsPerPoint
 
-                                trimEnd = max(min(videoDuration, newTime), trimStart + 0.5)
+                                trimEnd = max(min(videoDuration, newTime), trimStart + 1.0)
                                 playheadTime = trimEnd
                                 draggingTime = trimEnd
                                 seekPreview(to: trimEnd)
@@ -440,26 +462,6 @@ struct HighlightTrimView: View {
                     .frame(width: 3, height: 54)
                     .offset(x: playheadX - 1.5, y: 6)
                     .allowsHitTesting(false)
-
-                // Floating Time Bubble during scrub
-                if let activeDragTime = draggingTime {
-                    let bubbleX = CGFloat((activeDragTime - wStart) / wSpan) * width
-
-                    Text(formatPreciseTime(activeDragTime))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color(white: 0.12))
-                        .clipShape(Capsule())
-                        .overlay(
-                            Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1)
-                        )
-                        .offset(
-                            x: max(0, min(width - 86, bubbleX - 43)),
-                            y: -28
-                        )
-                }
             }
         }
         .frame(height: 64)
@@ -491,24 +493,24 @@ struct HighlightTrimView: View {
                     .foregroundColor(Color(white: 0.5))
                 Text(formatPreciseTime(clipStart))
                     .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.blue)
+                    .foregroundColor(.crimsonBlaze)
                 
-                HStack(spacing: 6) {
+                HStack(spacing: 14) { // spacing between +/- buttons
                     Button { stepStart(by: -0.1) } label: {
                         Image(systemName: "minus")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.white)
-                            .frame(width: 26, height: 20)
+                            .frame(width: 38, height: 32)
                             .background(Color(white: 0.22))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     Button { stepStart(by: 0.1) } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.white)
-                            .frame(width: 26, height: 20)
+                            .frame(width: 38, height: 32)
                             .background(Color(white: 0.22))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 }
                 .buttonStyle(.plain)
@@ -526,7 +528,7 @@ struct HighlightTrimView: View {
                     .foregroundColor(Color(white: 0.5))
                 Text(formatPreciseTime(displayedTime))
                     .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white)
+                    .foregroundColor(.black)
             }
             .frame(maxWidth: .infinity)
 
@@ -541,24 +543,24 @@ struct HighlightTrimView: View {
                     .foregroundColor(Color(white: 0.5))
                 Text(formatPreciseTime(clipEnd))
                     .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.red)
+                    .foregroundColor(.crimsonBlaze)
                 
-                HStack(spacing: 6) {
+                HStack(spacing: 14) {
                     Button { stepEnd(by: -0.1) } label: {
                         Image(systemName: "minus")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.white)
-                            .frame(width: 26, height: 20)
+                            .frame(width: 38, height: 32)
                             .background(Color(white: 0.22))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     Button { stepEnd(by: 0.1) } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.white)
-                            .frame(width: 26, height: 20)
+                            .frame(width: 38, height: 32)
                             .background(Color(white: 0.22))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 }
                 .buttonStyle(.plain)
@@ -730,9 +732,9 @@ struct HighlightTrimView: View {
 
     // MARK: - Export Logic
 
-    private func exportClip() {
+    private func exportClip(asNewClip: Bool = false) {
         isExporting = true
-        exportProgress = "Exporting highlights..."
+        exportProgress = "Saving video..."
 
         let asset = AVURLAsset(url: previewURL)
 
@@ -753,9 +755,13 @@ struct HighlightTrimView: View {
 
             try? FileManager.default.createDirectory(at: clipsDirectory, withIntermediateDirectories: true)
 
+            // 🌟 If saving as a new clip, generate a brand new UUID!
+            let targetClipID = asNewClip ? UUID() : clip.id
+            let targetHighlightIndex = asNewClip ? 1 : clip.highlightIndex
+
             let baseUUID = UUID().uuidString
-            let tempTrimURL = clipsDirectory.appendingPathComponent("\(clip.id.uuidString)-temp-\(baseUUID).mp4")
-            let finalOutputURL = clipsDirectory.appendingPathComponent("\(clip.id.uuidString)-trimmed-\(baseUUID).mp4")
+            let tempTrimURL = clipsDirectory.appendingPathComponent("\(targetClipID.uuidString)-temp-\(baseUUID).mp4")
+            let finalOutputURL = clipsDirectory.appendingPathComponent("\(targetClipID.uuidString)-trimmed-\(baseUUID).mp4")
 
             try? FileManager.default.removeItem(at: tempTrimURL)
             try? FileManager.default.removeItem(at: finalOutputURL)
@@ -778,61 +784,48 @@ struct HighlightTrimView: View {
                 return
             }
             
-            await MainActor.run { exportProgress = "Applying watermark..." }
-            
-            WatermarkService.applyWatermark(inputURL: tempTrimURL, outputURL: finalOutputURL) { result in
-                Task { @MainActor in
+            await MainActor.run { exportProgress = "Saving..." }
+
+            // Watermarking disabled for now — just relocate the trimmed file directly.
+            // (Restore the WatermarkService call here once a subscription tier ships.)
+            do {
+                try? FileManager.default.removeItem(at: finalOutputURL)
+                try FileManager.default.moveItem(at: tempTrimURL, to: finalOutputURL)
+            } catch {
+                print("Failed to finalize trimmed clip: \(error.localizedDescription)")
+                await MainActor.run {
                     isExporting = false
-                    exportProgress = ""
-                    
-                    try? FileManager.default.removeItem(at: tempTrimURL)
-                    
-                    switch result {
-                    case .success(let watermarkedURL):
-                        let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        
-                        let savedClip = Clip(
-                            id: clip.id,
-                            sessionID: clip.sessionID,
-                            triggeredAt: clip.triggeredAt,
-                            offsetInSession: clip.offsetInSession,
-                            fileURL: watermarkedURL,
-                            duration: trimEnd - trimStart,
-                            isUploaded: clip.isUploaded,
-                            highlightIndex: clip.highlightIndex,
-                            customTitle: cleanedTitle.isEmpty ? nil : cleanedTitle,
-                            sourceVideoURL: sourceURL,
-                            sourceStartTime: trimStart,
-                            sourceEndTime: trimEnd
-                        )
-                        
-                        onSave(savedClip)
-                        previewPlayer?.pause()
-                        previewPlayer?.replaceCurrentItem(with: nil)
-                        previewPlayer = nil
-                        dismiss()
-                        
-                    case .failure(let error):
-                        print("Watermark failed: \(error.localizedDescription)")
-                        let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let savedClip = Clip(
-                            id: clip.id,
-                            sessionID: clip.sessionID,
-                            triggeredAt: clip.triggeredAt,
-                            offsetInSession: clip.offsetInSession,
-                            fileURL: tempTrimURL,
-                            duration: trimEnd - trimStart,
-                            isUploaded: clip.isUploaded,
-                            highlightIndex: clip.highlightIndex,
-                            customTitle: cleanedTitle.isEmpty ? nil : cleanedTitle,
-                            sourceVideoURL: sourceURL,
-                            sourceStartTime: trimStart,
-                            sourceEndTime: trimEnd
-                        )
-                        onSave(savedClip)
-                        dismiss()
-                    }
+                    exportProgress = "Save failed"
                 }
+                return
+            }
+
+            await MainActor.run {
+                isExporting = false
+                exportProgress = ""
+                
+                let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                let savedClip = Clip(
+                    id: targetClipID,
+                    sessionID: clip.sessionID,
+                    triggeredAt: clip.triggeredAt,
+                    offsetInSession: asNewClip ? trimStart : clip.offsetInSession,
+                    fileURL: finalOutputURL,
+                    duration: trimEnd - trimStart,
+                    isUploaded: clip.isUploaded,
+                    highlightIndex: targetHighlightIndex,
+                    customTitle: cleanedTitle.isEmpty ? nil : cleanedTitle,
+                    sourceVideoURL: sourceURL,
+                    sourceStartTime: trimStart,
+                    sourceEndTime: trimEnd
+                )
+                
+                onSave(savedClip)
+                previewPlayer?.pause()
+                previewPlayer?.replaceCurrentItem(with: nil)
+                previewPlayer = nil
+                dismiss()
             }
         }
     }
@@ -843,5 +836,9 @@ struct HighlightTrimView: View {
         let secs = Int(clamped) % 60
         let hundredths = Int((clamped - floor(clamped)) * 100)
         return String(format: "%02d:%02d.%02d", minutes, secs, hundredths)
+    }
+    
+    private var isTrimTooShort: Bool {
+        (trimEnd - trimStart) < 1.0
     }
 }

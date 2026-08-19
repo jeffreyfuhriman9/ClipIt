@@ -34,10 +34,10 @@ struct HighlightExtractionProgressView: View {
                 Text("\(currentCount)/\(totalCount)")
                     .font(.system(.subheadline, design: .monospaced))
                     .fontWeight(.bold)
-                    .foregroundColor(.red)
+                    .foregroundColor(.crimsonBlaze)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Color.red.opacity(0.15))
+                    .background(Color.crimsonBlaze.opacity(0.15))
                     .cornerRadius(8)
             }
             
@@ -51,7 +51,7 @@ struct HighlightExtractionProgressView: View {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [.red, .orange],
+                                colors: [.gochujangRed, .crimsonBlaze],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -93,10 +93,10 @@ struct ImportProgressView: View {
                 Text("\(Int(progress * 100))%")
                     .font(.system(.subheadline, design: .monospaced))
                     .fontWeight(.bold)
-                    .foregroundColor(.red)
+                    .foregroundColor(.crimsonBlaze)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Color.red.opacity(0.15))
+                    .background(Color.crimsonBlaze.opacity(0.15))
                     .cornerRadius(8)
             }
             
@@ -110,7 +110,7 @@ struct ImportProgressView: View {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [.red, .orange],
+                                colors: [.gochujangRed, .crimsonBlaze],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )

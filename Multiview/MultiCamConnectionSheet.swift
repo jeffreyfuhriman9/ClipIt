@@ -157,7 +157,7 @@ struct MultiCamConnectionSheet: View {
                             Text("Disconnect Multiview Session")
                                 .fontWeight(.bold)
                         }
-                        .foregroundColor(.red)
+                        .foregroundColor(.crimsonBlaze)
                         .frame(height: 52)
                     }
                     .buttonStyle(.plain)

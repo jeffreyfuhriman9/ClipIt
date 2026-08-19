@@ -7,15 +7,27 @@ struct CameraPreviewView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> PreviewUIView {
         let view = PreviewUIView()
+        
+        // Attach preview layer on main thread, but start capture session off the main thread
         cameraManager.attachPreviewLayer(view.previewLayer)
-        cameraManager.startIfNeeded()
         onLayerReady?(view.previewLayer)
+        
+        // Offload blocking camera start operation to background thread
+        DispatchQueue.global(qos: .userInitiated).async {
+            cameraManager.startIfNeeded()
+        }
+        
         return view
     }
 
     func updateUIView(_ uiView: PreviewUIView, context: Context) {
-        cameraManager.attachPreviewLayer(uiView.previewLayer)
-        cameraManager.startIfNeeded()
+        // Only attach or start if session was disconnected to prevent redundant main-thread work
+        if uiView.previewLayer.session == nil {
+            cameraManager.attachPreviewLayer(uiView.previewLayer)
+            DispatchQueue.global(qos: .userInitiated).async {
+                cameraManager.startIfNeeded()
+            }
+        }
     }
 
     static func dismantleUIView(_ uiView: PreviewUIView, coordinator: ()) {

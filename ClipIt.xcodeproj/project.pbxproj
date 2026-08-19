@@ -7,9 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1F7456BD302A68CD0088DD35 /* BrandColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F7456BC302A68CD0088DD35 /* BrandColors.swift */; };
+		1F7456BF302B7C8C0088DD35 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F7456BE302B7C8C0088DD35 /* AboutView.swift */; };
 		1F99322930191BD7009A6D01 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 1FSUP0022F900002009B0DC /* Supabase */; };
 		1F99325830191D5D009A6D01 /* ClipExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99323D30191D5D009A6D01 /* ClipExtractor.swift */; };
-		1F99325930191D5D009A6D01 /* WatermarkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99324130191D5D009A6D01 /* WatermarkService.swift */; };
 		1F99325A30191D5D009A6D01 /* ClipItApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99323030191D5D009A6D01 /* ClipItApp.swift */; };
 		1F99325B30191D5D009A6D01 /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99323C30191D5D009A6D01 /* CameraManager.swift */; };
 		1F99325C30191D5D009A6D01 /* RecordSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99325230191D5D009A6D01 /* RecordSettingsSheet.swift */; };
@@ -35,10 +36,16 @@
 		1F99327330191D5D009A6D01 /* RecordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F99325330191D5D009A6D01 /* RecordView.swift */; };
 		1F99327630191D5D009A6D01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1F99322C30191D5D009A6D01 /* Assets.xcassets */; };
 		1F99328A301BDC2E009A6D01 /* KeepScreenAwakeModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F993289301BDC2D009A6D01 /* KeepScreenAwakeModifier.swift */; };
+		1F9932923022A4DA009A6D01 /* TitleSlideGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9932913022A4DA009A6D01 /* TitleSlideGenerator.swift */; };
+		1F9932943022A4F4009A6D01 /* ReelBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9932933022A4F4009A6D01 /* ReelBuilder.swift */; };
+		1F9932963022A511009A6D01 /* CreateReelSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9932953022A511009A6D01 /* CreateReelSheet.swift */; };
+		1F9932983023B136009A6D01 /* ClipsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9932973023B136009A6D01 /* ClipsView.swift */; };
 		1FA0B76B2FD8A04B009B0DCF /* CallKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FA0B76A2FD8A04B009B0DCF /* CallKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		1F7456BC302A68CD0088DD35 /* BrandColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandColors.swift; sourceTree = "<group>"; };
+		1F7456BE302B7C8C0088DD35 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		1F99322C30191D5D009A6D01 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1F99322E30191D5D009A6D01 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1F99322F30191D5D009A6D01 /* Clip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Clip.swift; sourceTree = "<group>"; };
@@ -51,7 +58,6 @@
 		1F99323C30191D5D009A6D01 /* CameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
 		1F99323D30191D5D009A6D01 /* ClipExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipExtractor.swift; sourceTree = "<group>"; };
 		1F99323E30191D5D009A6D01 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
-		1F99324130191D5D009A6D01 /* WatermarkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkService.swift; sourceTree = "<group>"; };
 		1F99324630191D5D009A6D01 /* BLEViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEViewModel.swift; sourceTree = "<group>"; };
 		1F99324730191D5D009A6D01 /* RecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingViewModel.swift; sourceTree = "<group>"; };
 		1F99324930191D5D009A6D01 /* AllViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllViews.swift; sourceTree = "<group>"; };
@@ -66,8 +72,11 @@
 		1F99325230191D5D009A6D01 /* RecordSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordSettingsSheet.swift; sourceTree = "<group>"; };
 		1F99325330191D5D009A6D01 /* RecordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordView.swift; sourceTree = "<group>"; };
 		1F99325430191D5D009A6D01 /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
-		1F993286301BDA3C009A6D01 /* Untitled.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Untitled.swift; sourceTree = "<group>"; };
 		1F993289301BDC2D009A6D01 /* KeepScreenAwakeModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepScreenAwakeModifier.swift; sourceTree = "<group>"; };
+		1F9932913022A4DA009A6D01 /* TitleSlideGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleSlideGenerator.swift; sourceTree = "<group>"; };
+		1F9932933022A4F4009A6D01 /* ReelBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelBuilder.swift; sourceTree = "<group>"; };
+		1F9932953022A511009A6D01 /* CreateReelSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateReelSheet.swift; sourceTree = "<group>"; };
+		1F9932973023B136009A6D01 /* ClipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipsView.swift; sourceTree = "<group>"; };
 		1FA0B76A2FD8A04B009B0DCF /* CallKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CallKit.framework; path = System/Library/Frameworks/CallKit.framework; sourceTree = SDKROOT; };
 		1FE9223D2F86EBD100ED9558 /* Clipit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Clipit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -113,7 +122,7 @@
 				1F99323C30191D5D009A6D01 /* CameraManager.swift */,
 				1F99323D30191D5D009A6D01 /* ClipExtractor.swift */,
 				1F99323E30191D5D009A6D01 /* NotificationManager.swift */,
-				1F99324130191D5D009A6D01 /* WatermarkService.swift */,
+				1F7456BC302A68CD0088DD35 /* BrandColors.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -121,7 +130,6 @@
 		1F99324830191D5D009A6D01 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
-				1F993286301BDA3C009A6D01 /* Untitled.swift */,
 				1F99324630191D5D009A6D01 /* BLEViewModel.swift */,
 				1F99324730191D5D009A6D01 /* RecordingViewModel.swift */,
 			);
@@ -132,6 +140,8 @@
 			isa = PBXGroup;
 			children = (
 				1F99324930191D5D009A6D01 /* AllViews.swift */,
+				1F9932973023B136009A6D01 /* ClipsView.swift */,
+				1F99325330191D5D009A6D01 /* RecordView.swift */,
 				1F99324A30191D5D009A6D01 /* CameraPreviewView.swift */,
 				1F99324B30191D5D009A6D01 /* ClipPlayerView.swift */,
 				1F99324C30191D5D009A6D01 /* ClipTitleEditView.swift */,
@@ -141,11 +151,21 @@
 				1F99325030191D5D009A6D01 /* HighlightTrimView.swift */,
 				1F99325130191D5D009A6D01 /* OnboardingView.swift */,
 				1F99325230191D5D009A6D01 /* RecordSettingsSheet.swift */,
-				1F99325330191D5D009A6D01 /* RecordView.swift */,
 				1F99325430191D5D009A6D01 /* ShareSheet.swift */,
+				1F7456BE302B7C8C0088DD35 /* AboutView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
+		};
+		1F99328F3022A487009A6D01 /* ReelBuilder */ = {
+			isa = PBXGroup;
+			children = (
+				1F9932913022A4DA009A6D01 /* TitleSlideGenerator.swift */,
+				1F9932933022A4F4009A6D01 /* ReelBuilder.swift */,
+				1F9932953022A511009A6D01 /* CreateReelSheet.swift */,
+			);
+			path = ReelBuilder;
+			sourceTree = SOURCE_ROOT;
 		};
 		1FA0B7692FD8A04A009B0DCF /* Frameworks */ = {
 			isa = PBXGroup;
@@ -160,6 +180,7 @@
 			children = (
 				1F99322C30191D5D009A6D01 /* Assets.xcassets */,
 				1F99322E30191D5D009A6D01 /* Info.plist */,
+				1F99328F3022A487009A6D01 /* ReelBuilder */,
 				1F99323330191D5D009A6D01 /* Models */,
 				1F99323630191D5D009A6D01 /* Multiview */,
 				1F99324230191D5D009A6D01 /* Services */,
@@ -255,13 +276,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1F7456BF302B7C8C0088DD35 /* AboutView.swift in Sources */,
+				1F9932963022A511009A6D01 /* CreateReelSheet.swift in Sources */,
 				1F99325830191D5D009A6D01 /* ClipExtractor.swift in Sources */,
-				1F99325930191D5D009A6D01 /* WatermarkService.swift in Sources */,
 				1F99325A30191D5D009A6D01 /* ClipItApp.swift in Sources */,
 				1F99325B30191D5D009A6D01 /* CameraManager.swift in Sources */,
 				1F99325C30191D5D009A6D01 /* RecordSettingsSheet.swift in Sources */,
 				1F99325D30191D5D009A6D01 /* RecordingViewModel.swift in Sources */,
 				1F99325F30191D5D009A6D01 /* MultipeerManager.swift in Sources */,
+				1F9932923022A4DA009A6D01 /* TitleSlideGenerator.swift in Sources */,
 				1F99326030191D5D009A6D01 /* DeviceStatusView.swift in Sources */,
 				1F99326230191D5D009A6D01 /* ContentView.swift in Sources */,
 				1F99326330191D5D009A6D01 /* BLEViewModel.swift in Sources */,
@@ -275,12 +298,15 @@
 				1F99326A30191D5D009A6D01 /* CameraPreviewView.swift in Sources */,
 				1F99326B30191D5D009A6D01 /* OnboardingView.swift in Sources */,
 				1F99326C30191D5D009A6D01 /* AllViews.swift in Sources */,
+				1F9932983023B136009A6D01 /* ClipsView.swift in Sources */,
 				1F99326E30191D5D009A6D01 /* RecordingMode.swift in Sources */,
 				1F99326F30191D5D009A6D01 /* Clip.swift in Sources */,
 				1F99327030191D5D009A6D01 /* HighlightProgressBarView.swift in Sources */,
+				1F7456BD302A68CD0088DD35 /* BrandColors.swift in Sources */,
 				1F99327130191D5D009A6D01 /* HighlightTrimView.swift in Sources */,
 				1F99327230191D5D009A6D01 /* BufferManager.swift in Sources */,
 				1F99327330191D5D009A6D01 /* RecordView.swift in Sources */,
+				1F9932943022A4F4009A6D01 /* ReelBuilder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -418,7 +444,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -462,7 +488,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
@@ -528,6 +554,8 @@
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.0.0;
 			};
+			traits = (
+			);
 		};
 /* End XCRemoteSwiftPackageReference section */
 

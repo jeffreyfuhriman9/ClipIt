@@ -15,6 +15,8 @@ struct Clip: Identifiable, Codable, Equatable {
     var sourceEndTime: TimeInterval?
     var customName: String?
     var isSecondaryAngle: Bool = false
+    var isReel: Bool = false
+    var isFavorite: Bool = false
     
     var beforeSeconds: Double?
     var afterSeconds: Double?
@@ -27,10 +29,8 @@ struct Clip: Identifiable, Codable, Equatable {
     
     /// Determines if the clip has its full underlying source video available locally for advanced trimming.
     var hasSourceVideoAvailable: Bool {
-        // If it's a full session recording itself, it doesn't need a source video.
         if highlightIndex == nil { return true }
         
-        // Check if the source video URL exists and actually points to a file that exists on disk.
         if let sourceURL = sourceVideoURL {
             return FileManager.default.fileExists(atPath: sourceURL.path)
         }
@@ -74,41 +74,34 @@ struct Clip: Identifiable, Codable, Equatable {
         self.afterSeconds = afterSeconds
     }
 
-    // 👇 1. EXPLICIT CODING KEYS
+    // EXPLICIT CODING KEYS
     enum CodingKeys: String, CodingKey {
-        case id, sessionID, triggeredAt, offsetInSession, fileURL, duration, isUploaded, highlightIndex, customTitle, sourceVideoURL, sourceStartTime, sourceEndTime, customName, isSecondaryAngle
+        case id, sessionID, triggeredAt, offsetInSession, isReel, fileURL, duration, isUploaded, highlightIndex, customTitle, sourceVideoURL, sourceStartTime, sourceEndTime, customName, isSecondaryAngle, isFavorite
     }
 
-    // 👇 2. UPGRADED CUSTOM DECODER (100% Immune to Sandbox & Subdirectory changes)
+    // UPGRADED CUSTOM DECODER
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         sessionID = try container.decode(UUID.self, forKey: .sessionID)
         triggeredAt = try container.decode(Date.self, forKey: .triggeredAt)
         offsetInSession = try container.decode(TimeInterval.self, forKey: .offsetInSession)
-        
-        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        
-        // 🛟 FLAWLESS SANDBOX FIX: Rebuilds paths dynamically keeping any subdirectories intact
-        if let oldURL = try container.decodeIfPresent(URL.self, forKey: .fileURL) {
-            let pathComponents = oldURL.pathComponents
-            if let docsIndex = pathComponents.lastIndex(of: "Documents") {
-                let relativePath = pathComponents[(docsIndex + 1)...].joined(separator: "/")
-                fileURL = docsDir.appendingPathComponent(relativePath)
-            } else {
-                fileURL = docsDir.appendingPathComponent(oldURL.lastPathComponent)
-            }
-        } else {
-            fileURL = nil
-        }
-        
         duration = try container.decode(TimeInterval.self, forKey: .duration)
         isUploaded = try container.decode(Bool.self, forKey: .isUploaded)
         highlightIndex = try container.decodeIfPresent(Int.self, forKey: .highlightIndex)
         customTitle = try container.decodeIfPresent(String.self, forKey: .customTitle)
+        isReel = try container.decodeIfPresent(Bool.self, forKey: .isReel) ?? false
+        
+        let isHighlight = (highlightIndex != nil)
+        
+        if let oldURL = try container.decodeIfPresent(URL.self, forKey: .fileURL) {
+            fileURL = Clip.resolveFileURL(from: oldURL, isHighlight: isHighlight, isReel: isReel)
+        } else {
+            fileURL = nil
+        }
         
         if let oldSource = try container.decodeIfPresent(URL.self, forKey: .sourceVideoURL) {
-            sourceVideoURL = docsDir.appendingPathComponent(oldSource.lastPathComponent)
+            sourceVideoURL = Clip.resolveFileURL(from: oldSource, isHighlight: false, isReel: false)
         } else {
             sourceVideoURL = nil
         }
@@ -117,9 +110,10 @@ struct Clip: Identifiable, Codable, Equatable {
         sourceEndTime = try container.decodeIfPresent(TimeInterval.self, forKey: .sourceEndTime)
         customName = try container.decodeIfPresent(String.self, forKey: .customName)
         isSecondaryAngle = try container.decodeIfPresent(Bool.self, forKey: .isSecondaryAngle) ?? false
+        isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
     
-    // 👇 3. CUSTOM ENCODER
+    // UPDATE: Encoder
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -136,30 +130,70 @@ struct Clip: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(sourceEndTime, forKey: .sourceEndTime)
         try container.encodeIfPresent(customName, forKey: .customName)
         try container.encode(isSecondaryAngle, forKey: .isSecondaryAngle)
+        try container.encode(isReel, forKey: .isReel)
+        try container.encode(isFavorite, forKey: .isFavorite) 
+    }
+
+    // UPDATE: SMART PATH RESOLVER
+    static func resolveFileURL(from oldURL: URL, isHighlight: Bool, isReel: Bool = false) -> URL {
+        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let filename = oldURL.lastPathComponent
+        
+        // 1. Try path components relative to "Documents" (New Build format)
+        let pathComponents = oldURL.pathComponents
+        if let docsIndex = pathComponents.lastIndex(of: "Documents") {
+            var rebuiltURL = docsDir
+            for component in pathComponents[(docsIndex + 1)...] {
+                rebuiltURL = rebuiltURL.appendingPathComponent(component)
+            }
+            if FileManager.default.fileExists(atPath: rebuiltURL.path) {
+                return rebuiltURL
+            }
+        }
+        
+        // 2. Check if file physically exists in Documents/HighlightReels/
+        let reelsFolderURL = docsDir.appendingPathComponent("HighlightReels", isDirectory: true).appendingPathComponent(filename)
+        if FileManager.default.fileExists(atPath: reelsFolderURL.path) {
+            return reelsFolderURL
+        }
+        
+        // 3. Backward Compatibility: Check if file physically exists in Documents/Clips/
+        let clipsFolderURL = docsDir.appendingPathComponent("Clips", isDirectory: true).appendingPathComponent(filename)
+        if FileManager.default.fileExists(atPath: clipsFolderURL.path) {
+            return clipsFolderURL
+        }
+        
+        // 4. Backward Compatibility: Check if file physically exists in root Documents/
+        let rootDocsURL = docsDir.appendingPathComponent(filename)
+        if FileManager.default.fileExists(atPath: rootDocsURL.path) {
+            return rootDocsURL
+        }
+        
+        // 5. Fallback if file doesn't exist yet on disk
+        if isReel {
+            return reelsFolderURL
+        }
+        return isHighlight ? clipsFolderURL : rootDocsURL
     }
 
     var displayName: String {
         if let customName = customName { return customName }
         if isSecondaryAngle, let index = highlightIndex { return "Highlight #\(index) - Camera 2" }
         if let index = highlightIndex {
-            // 🌟 Matches the format of the 2nd camera when organizing multi-view clips
             return "Highlight #\(index)"
         }
-        return "Full Recording"
+        return "Original Video"
     }
 
-    // 🔥 DYNAMIC FORMAT: 0:45 -> 9:21 -> 59:59 -> 1:25:23
     var durationLabel: String {
-        let total = Int(max(0, duration)) // Safely prevents negative time
+        let total = Int(max(0, duration))
         let h = total / 3600
         let m = (total % 3600) / 60
         let s = total % 60
         
         if h > 0 {
-            // 1+ hours (ex: 1:25:23)
             return String(format: "%d:%02d:%02d", h, m, s)
         } else {
-            // Under 1 hour (ex: 9:21 or 59:59)
             return String(format: "%d:%02d", m, s)
         }
     }
@@ -202,12 +236,10 @@ struct Session: Identifiable, Codable {
         self.isSaved = isSaved
     }
     
-    // 👇 1. EXPLICIT CODING KEYS FOR SESSION
     enum CodingKeys: String, CodingKey {
         case id, name, sessionNumber, mode, startedAt, endedAt, clips, fullVideoURL, isSaved, isProcessing, processingProgress
     }
     
-    // 👇 2. CUSTOM DECODER (Protects your "Full Recording" videos from being deleted)
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -218,16 +250,8 @@ struct Session: Identifiable, Codable {
         endedAt = try container.decodeIfPresent(Date.self, forKey: .endedAt)
         clips = try container.decode([Clip].self, forKey: .clips)
         
-        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        
         if let oldURL = try container.decodeIfPresent(URL.self, forKey: .fullVideoURL) {
-            let pathComponents = oldURL.pathComponents
-            if let docsIndex = pathComponents.lastIndex(of: "Documents") {
-                let relativePath = pathComponents[(docsIndex + 1)...].joined(separator: "/")
-                fullVideoURL = docsDir.appendingPathComponent(relativePath)
-            } else {
-                fullVideoURL = docsDir.appendingPathComponent(oldURL.lastPathComponent)
-            }
+            fullVideoURL = Clip.resolveFileURL(from: oldURL, isHighlight: false)
         } else {
             fullVideoURL = nil
         }
@@ -237,7 +261,6 @@ struct Session: Identifiable, Codable {
         processingProgress = try container.decodeIfPresent(Double.self, forKey: .processingProgress) ?? 0.0
     }
     
-    // 👇 3. CUSTOM ENCODER
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -258,7 +281,6 @@ struct Session: Identifiable, Codable {
         return end.timeIntervalSince(startedAt)
     }
 
-    // 🔥 DYNAMIC FORMAT: 0:45 -> 9:21 -> 59:59 -> 1:25:23
     var durationLabel: String {
         let total = Int(max(0, duration))
         let h = total / 3600
@@ -266,10 +288,8 @@ struct Session: Identifiable, Codable {
         let s = total % 60
         
         if h > 0 {
-            // 1+ hours (ex: 1:25:23)
             return String(format: "%d:%02d:%02d", h, m, s)
         } else {
-            // Under 1 hour (ex: 9:21 or 59:59)
             return String(format: "%d:%02d", m, s)
         }
     }
@@ -280,6 +300,8 @@ struct Session: Identifiable, Codable {
         return f.string(from: startedAt).uppercased()
     }
 
-    var highlights: [Clip] { clips.filter { $0.highlightIndex != nil } }
-    var fullRecordingClip: Clip? { clips.first { $0.highlightIndex == nil } }
+    // 🌟 Helper accessors
+    var highlights: [Clip] { clips.filter { $0.highlightIndex != nil && !$0.isReel } }
+    var reels: [Clip] { clips.filter { $0.isReel } }
+    var fullRecordingClip: Clip? { clips.first { $0.highlightIndex == nil && !$0.isReel } }
 }

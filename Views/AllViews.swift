@@ -2,557 +2,10 @@ import SwiftUI
 import AVFoundation
 import Combine
 
-// MARK: - ClipsView
-
-struct ClipsView: View {
-    @EnvironmentObject var recordingVM: RecordingViewModel
-    @EnvironmentObject var multipeerManager: MultipeerManager
-    @State private var sessionBeingRenamed: Session?
-    @State private var renameDraft = ""
-    @State private var sessionToDelete: Session?
-    @State private var fullRecordingToDelete: Session?
-    
-    // 🌟 Multi-Select State
-    @State private var isSelectionMode = false
-    @State private var selectedClipIDs = Set<UUID>()
-    @State private var showDeleteConfirmation = false
-    
-    // Variables for sharing capability
-    @State private var itemsToShare: [URL] = []
-    @State private var showShareSheet = false
-    
-    var body: some View {
-        ZStack {
-            NavigationStack {
-                VStack(spacing: 0) {
-                    if recordingVM.sessions.isEmpty {
-                        emptyState
-                    } else {
-                        sessionList
-                    }
-                }
-                .navigationTitle("My Clips")
-                .background(Color(UIColor.systemBackground))
-                .toolbar {
-                    // 🌟 Top Right Select / Cancel Button
-                    ToolbarItem(placement: .topBarTrailing) {
-                        if !recordingVM.sessions.isEmpty {
-                            Button(isSelectionMode ? "Cancel" : "Select") {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    isSelectionMode.toggle()
-                                    if !isSelectionMode {
-                                        selectedClipIDs.removeAll()
-                                    }
-                                }
-                            }
-                            .fontWeight(.semibold)
-                        }
-                    }
-                    
-                    // 🌟 Bottom Toolbar (Share, "Select Items", Trash)
-                    if isSelectionMode {
-                        ToolbarItemGroup(placement: .bottomBar) {
-                            // Bottom-Left Share Button
-                            Button(action: shareSelectedClips) {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 18))
-                            }
-                            .disabled(selectedClipIDs.isEmpty)
-                            
-                            Spacer()
-                            
-                            // Bottom-Center Status Text
-                            Text(selectedClipIDs.isEmpty ? "Select Items" : "\(selectedClipIDs.count) Selected")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.secondary)
-                            
-                            Spacer()
-                            
-                            // Bottom-Right Trash Button
-                            Button(action: { showDeleteConfirmation = true }) {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 18))
-                                    .foregroundColor(selectedClipIDs.isEmpty ? .gray : .red)
-                            }
-                            .disabled(selectedClipIDs.isEmpty)
-                        }
-                    }
-                }
-                .confirmationDialog(
-                    "Delete \(selectedClipIDs.count) selected items?",
-                    isPresented: $showDeleteConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("Delete", role: .destructive) {
-                        deleteSelectedClips()
-                    }
-                    Button("Cancel", role: .cancel) {}
-                }
-                .sheet(item: $sessionBeingRenamed) { session in
-                    RenameSessionSheet(
-                        sessionName: session.name,
-                        draftName: $renameDraft,
-                        onSave: {
-                            recordingVM.renameSession(id: session.id, newName: renameDraft)
-                            sessionBeingRenamed = nil
-                        },
-                        onCancel: { sessionBeingRenamed = nil }
-                    )
-                }
-                .sheet(isPresented: $showShareSheet, onDismiss: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isSelectionMode = false
-                        selectedClipIDs.removeAll()
-                    }
-                }) {
-                    ShareSheet(items: itemsToShare)
-                }
-                .onChange(of: multipeerManager.newlyImportedFullVideoURL) { _, newURL in
-                    if let incomingURL = newURL {
-                        print("📦 AllViews intercepted completed transfer file path for session: \(String(describing: multipeerManager.newlyImportedTargetSessionID))")
-                        
-                        // 🌟 FIX: Pass the sessionID we parsed during the transfer
-                        recordingVM.attachSecondaryMasterVideo(
-                            fileURL: incomingURL,
-                            targetSessionID: multipeerManager.newlyImportedTargetSessionID
-                        )
-                        
-                        // Clear out the temporary variables so the manager is ready for the next request
-                        multipeerManager.newlyImportedFullVideoURL = nil
-                        multipeerManager.newlyImportedTargetSessionID = nil
-                    }
-                }
-                .alert("Delete session?", isPresented: Binding(
-                    get: { sessionToDelete != nil },
-                    set: { if !$0 { sessionToDelete = nil } }
-                )) {
-                    Button("Cancel", role: .cancel) { sessionToDelete = nil }
-                    Button("Delete", role: .destructive) {
-                        if let session = sessionToDelete {
-                            recordingVM.deleteSession(id: session.id)
-                        }
-                        sessionToDelete = nil
-                    }
-                } message: {
-                    Text("This will permanently delete the full recording and all highlights in this session.")
-                }
-                .alert("Delete Full Recording?", isPresented: Binding(
-                    get: { fullRecordingToDelete != nil },
-                    set: { if !$0 { fullRecordingToDelete = nil } }
-                )) {
-                    Button("Delete Master Video", role: .destructive) {
-                        if let session = fullRecordingToDelete {
-                            // Check if a secondary continuous master track exists for this session context
-                            let hasSecondaryMaster = session.clips.contains { $0.isSecondaryAngle && $0.sourceVideoURL != nil }
-                            
-                            if hasSecondaryMaster {
-                                // If secondary exists, wipe it out cleanly!
-                                recordingVM.deleteSecondaryFullRecording(sessionID: session.id)
-                            } else {
-                                // Otherwise fallback to default primary track deletion workflow
-                                recordingVM.deleteFullRecording(sessionID: session.id)
-                            }
-                        }
-                        fullRecordingToDelete = nil
-                    }
-                    Button("Keep File", role: .cancel) { fullRecordingToDelete = nil }
-                } message: {
-                    Text("Are you sure you want to delete the continuous master background track? You will keep your individual trimmed highlight clips, but you will no longer be able to change their window boundaries.")
-                }
-                .alert("Import Multiview Highlights?", isPresented: Binding(
-                    // 🌟 ONLY show the alert if the trigger is true, this device is the host,
-                    // AND there is actually a secondary device currently in your connectedPeers array!
-                    get: {
-                        recordingVM.showAutomaticImportPrompt &&
-                        multipeerManager.isHost &&
-                        !multipeerManager.connectedPeers.isEmpty
-                    },
-                    set: { recordingVM.showAutomaticImportPrompt = $0 }
-                )) {
-                    Button("Import Highlights", role: .none) {
-                        // No longer strictly need the if-statement here since the alert won't open without it,
-                        // but keeping it is totally fine and safe!
-                        if !multipeerManager.connectedPeers.isEmpty {
-                            recordingVM.isImportingSecondary = true
-                            multipeerManager.sendCommand(.requestHighlights)
-                            print("📡 Sent .requestHighlights command to secondary device.")
-                        }
-                    }
-                    Button("Skip", role: .cancel) {
-                        recordingVM.isImportingSecondary = false
-                    }
-                } message: {
-                    Text("Your primary clips are fully processed! Would you like to wirelessly match and import the individual highlight clips from your connected secondary camera now?")
-                }
-            }
-            
-            // 🌟 STEP 3 PROGRESS OVERLAY LAYER
-            if recordingVM.isExtractingHighlights {
-                ZStack {
-                    Color.black.opacity(0.85)
-                        .ignoresSafeArea()
-                    
-                    VStack(spacing: 24) {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .red))
-                            .scaleEffect(1.5)
-                        
-                        Text("Extracting Highlights...")
-                            .font(.system(.headline, design: .rounded))
-                            .foregroundColor(.white)
-                        
-                        HighlightExtractionProgressView(
-                            currentCount: recordingVM.currentExtractionProgress,
-                            totalCount: recordingVM.totalExtractionCount
-                        )
-                        .frame(maxWidth: 340)
-                        .padding(.horizontal, 24)
-                    }
-                }
-                .transition(.opacity)
-                .id("ClipsExtractionOverlay")
-            }
-            
-            // 🌟 STEP 4: MULTIVIEW IMPORT PROGRESS OVERLAY
-            if recordingVM.isImportingSecondary {
-                ZStack {
-                    Color.black.opacity(0.85)
-                        .ignoresSafeArea()
-                    
-                    VStack(spacing: 24) {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .red))
-                            .scaleEffect(1.5)
-                        
-                        Text("Importing Angles...")
-                            .font(.system(.headline, design: .rounded))
-                            .foregroundColor(.white)
-                        
-                        // 🌟 Using your beautiful custom progress view!
-                        HighlightExtractionProgressView(
-                            currentCount: multipeerManager.receivedHighlightCount,
-                            totalCount: max(1, multipeerManager.expectedHighlightCount) // max(1) prevents divide-by-zero crashes
-                        )
-                        .frame(maxWidth: 340)
-                        .padding(.horizontal, 24)
-                    }
-                }
-                .transition(.opacity)
-                .id("ClipsImportOverlay")
-            }
-        }
-        // Animates both the extraction screen overlay and the multi-cam notification banner slide-in
-        .animation(.default, value: multipeerManager.importedVideoURLQueue)
-        .animation(.easeInOut(duration: 0.3), value: recordingVM.isExtractingHighlights)
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "film.stack")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
-            Text("No clips yet")
-                .font(.title3.bold())
-            Text("Head to Record to start capturing highlights.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    
-    private var sessionList: some View {
-        List {
-            ForEach(recordingVM.sessions, id: \.id) { session in
-                SessionSection(
-                    session: session,
-                    renameDraft: $renameDraft,
-                    sessionBeingRenamed: $sessionBeingRenamed,
-                    sessionToDelete: $sessionToDelete,
-                    fullRecordingToDelete: $fullRecordingToDelete,
-                    isSelectionMode: $isSelectionMode,
-                    selectedClipIDs: $selectedClipIDs
-                )
-            }
-        }
-        .listStyle(.insetGrouped)
-    }
-    
-    // 🌟 Helper: Batch delete selected clips
-    private func deleteSelectedClips() {
-        for session in recordingVM.sessions {
-            for clip in session.clips where selectedClipIDs.contains(clip.id) {
-                recordingVM.deleteClip(sessionID: session.id, clipID: clip.id)
-            }
-        }
-        withAnimation {
-            selectedClipIDs.removeAll()
-            isSelectionMode = false
-        }
-    }
-
-    // 🌟 Helper: Batch share selected clips
-    private func shareSelectedClips() {
-        var urlsToShare: [URL] = []
-        
-        for session in recordingVM.sessions {
-            for clip in session.clips where selectedClipIDs.contains(clip.id) {
-                if let url = clip.fileURL {
-                    urlsToShare.append(url)
-                }
-            }
-        }
-        
-        guard !urlsToShare.isEmpty else { return }
-        
-        self.itemsToShare = urlsToShare
-        self.showShareSheet = true
-    }
-}
-
-// MARK: - SessionSection
-
-private struct SessionSection: View {
-    let session: Session
-    
-    @EnvironmentObject var recordingVM: RecordingViewModel
-    @EnvironmentObject var multipeerManager: MultipeerManager
-    
-    @Binding var renameDraft: String
-    @Binding var sessionBeingRenamed: Session?
-    @Binding var sessionToDelete: Session?
-    @Binding var fullRecordingToDelete: Session?
-    
-    // 🌟 Multi-Select Bindings
-    @Binding var isSelectionMode: Bool
-    @Binding var selectedClipIDs: Set<UUID>
-    
-    var body: some View {
-        Section {
-            if session.isProcessing {
-                HStack(spacing: 12) {
-                    ProgressView()
-                        .scaleEffect(1.1)
-                        .tint(.red)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Processing Video...")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.primary)
-                        
-                        if session.processingProgress > 0 {
-                            Text("Extracting highlights: \(Int(session.processingProgress * 100))%")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("Applying ClipIt watermark...")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                .padding(.vertical, 8)
-            } else {
-                if let fullClip = session.fullRecordingClip {
-                    ClipRow(
-                        sessionID: session.id,
-                        clip: fullClip,
-                        fullVideoURL: nil,
-                        sessionDuration: session.duration,
-                        isSelectionMode: isSelectionMode,
-                        isSelected: selectedClipIDs.contains(fullClip.id),
-                        onSelectToggle: { toggleSelection(fullClip.id) },
-                        onDeleteFullRecording: { recordingVM.deleteFullRecording(sessionID: session.id) }
-                    )
-                }
-                
-                let primaryClips = session.highlights.filter { !$0.isSecondaryAngle }
-                ForEach(primaryClips) { clip in
-                    ClipRow(
-                        sessionID: session.id,
-                        clip: clip,
-                        fullVideoURL: session.fullVideoURL,
-                        sessionDuration: session.duration,
-                        isSelectionMode: isSelectionMode,
-                        isSelected: selectedClipIDs.contains(clip.id),
-                        onSelectToggle: { toggleSelection(clip.id) },
-                        onDeleteFullRecording: nil
-                    )
-                }
-                
-                let secondaryClips = session.highlights.filter { $0.isSecondaryAngle }
-
-                if !secondaryClips.isEmpty {
-                    Text("CAMERA ANGLE 2")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 12)
-                        .padding(.bottom, 4)
-                    
-                    if let secondaryMasterURL = secondaryClips.first?.sourceVideoURL {
-                        let secondaryMasterClip: Clip = {
-                            var c = Clip(
-                                sessionID: session.id,
-                                offsetInSession: 0,
-                                fileURL: secondaryMasterURL,
-                                duration: session.duration,
-                                highlightIndex: nil
-                            )
-                            c.isSecondaryAngle = true
-                            return c
-                        }()
-                        
-                        ClipRow(
-                            sessionID: session.id,
-                            clip: secondaryMasterClip,
-                            fullVideoURL: nil,
-                            sessionDuration: session.duration,
-                            isSelectionMode: isSelectionMode,
-                            isSelected: selectedClipIDs.contains(secondaryMasterClip.id),
-                            onSelectToggle: { toggleSelection(secondaryMasterClip.id) },
-                            onDeleteFullRecording: {
-                                recordingVM.deleteSecondaryFullRecording(sessionID: session.id)
-                            }
-                        )
-                    }
-                    
-                    ForEach(secondaryClips) { clip in
-                        ClipRow(
-                            sessionID: session.id,
-                            clip: clip,
-                            fullVideoURL: clip.sourceVideoURL,
-                            sessionDuration: session.duration,
-                            isSelectionMode: isSelectionMode,
-                            isSelected: selectedClipIDs.contains(clip.id),
-                            onSelectToggle: { toggleSelection(clip.id) },
-                            onDeleteFullRecording: nil
-                        )
-                    }
-                }
-            }
-        } header: {
-            SessionHeader(
-                session: session,
-                isSelectionMode: isSelectionMode,
-                onRenameTapped: {
-                    renameDraft = session.name
-                    sessionBeingRenamed = session
-                },
-                onDeleteTapped: { sessionToDelete = session }
-            )
-        }
-    }
-    
-    private func toggleSelection(_ clipID: UUID) {
-        if selectedClipIDs.contains(clipID) {
-            selectedClipIDs.remove(clipID)
-        } else {
-            selectedClipIDs.insert(clipID)
-        }
-    }
-}
-
-// MARK: - SessionHeader
-
-private struct SessionHeader: View {
-    let session: Session
-    let isSelectionMode: Bool
-    let onRenameTapped: () -> Void
-    let onDeleteTapped: () -> Void
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Button(action: onRenameTapped) {
-                    HStack(spacing: 6) {
-                        Text(session.name)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.primary)
-                        Image(systemName: "pencil")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.secondary)
-                            .padding(6)
-                            .background(Color(UIColor.tertiarySystemBackground))
-                            .clipShape(Circle())
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                
-                Text("\(session.formattedDate) · \(session.durationLabel)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            
-            // 🌟 Trash button only displays during Select mode
-            if isSelectionMode {
-                Button(role: .destructive, action: onDeleteTapped) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.red)
-                        .padding(8)
-                        .background(Color.red.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-                .transition(.scale.combined(with: .opacity))
-            }
-        }
-    }
-}
-
-// MARK: - RenameSessionSheet
-
-private struct RenameSessionSheet: View {
-    let sessionName: String
-    @Binding var draftName: String
-    let onSave: () -> Void
-    let onCancel: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Session name") {
-                    TextField("Enter a name", text: $draftName)
-                        .textInputAutocapitalization(.words)
-                        .autocorrectionDisabled()
-                        .overlay(
-                            HStack {
-                                Spacer()
-                                if !draftName.isEmpty {
-                                    Button {
-                                        draftName = ""
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .foregroundColor(Color(UIColor.tertiaryLabel))
-                                            .font(.system(size: 16))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        )
-                }
-            }
-            .navigationTitle("Rename Session")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onCancel(); dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave(); dismiss() }
-                        .disabled(draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-        }
-        .presentationDetents([.height(220)])
-        .presentationDragIndicator(.visible)
-        .onAppear { draftName = sessionName }
-    }
+// 🌟 Helper item for bulletproof share sheet presentation
+struct ShareContainer: Identifiable {
+    let id = UUID()
+    let urls: [URL]
 }
 
 // MARK: - ClipRow
@@ -561,6 +14,7 @@ private struct ClipRow: View {
     @EnvironmentObject var recordingVM: RecordingViewModel
     let sessionID: UUID
     let clip: Clip
+    var allClips: [Clip] = []
     let fullVideoURL: URL?
     let sessionDuration: TimeInterval
     
@@ -664,28 +118,28 @@ private struct ClipRow: View {
         }
         .buttonStyle(.plain)
         .fullScreenCover(isPresented: $showPlayer) {
-            ClipPlayerView(
-                clip: clip,
+            ClipPagerView(
+                clips: allClips,
+                initialClipID: clip.id,
                 fullVideoURL: fullVideoURL,
                 sessionDuration: sessionDuration,
-                onDelete: {
-                    if clip.highlightIndex == nil {
+                onDelete: { clipToDelete in
+                    if clipToDelete.highlightIndex == nil {
                         onDeleteFullRecording?()
                     } else {
-                        recordingVM.deleteClip(sessionID: clip.sessionID, clipID: clip.id)
+                        recordingVM.deleteClip(sessionID: clipToDelete.sessionID, clipID: clipToDelete.id)
                     }
                 },
                 onTrimSaved: { updatedClip in
                     recordingVM.updateClip(updatedClip)
                 },
-                onRename: { newName in
-                    var updatedClip = clip
+                onRename: { clipToRename, newName in
+                    var updatedClip = clipToRename
                     updatedClip.customName = newName
                     recordingVM.updateClip(updatedClip)
                 }
             )
             .environmentObject(multipeerManager)
-            .id(clip.id)
         }
         .onAppear { loadThumbnail() }
         .onChange(of: clip.fileURL) { _, _ in loadThumbnail() }
@@ -794,7 +248,9 @@ struct BLEDeviceView: View {
                     Button(action: { bleVM.startScanning() }) {
                         HStack {
                             Spacer()
-                            Text("Scan Nearby Devices").font(.system(size: 15, weight: .semibold))
+                            Text("Scan Nearby Devices")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.crimsonBlaze)
                             Spacer()
                         }
                     }
@@ -825,6 +281,8 @@ struct BLEDeviceView: View {
                 }
             }
             .navigationTitle("ClipIt Button")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.large)
         }
     }
     
@@ -957,7 +415,7 @@ private struct TimelineBar: View {
                     let pct = sessionDuration > 0 ? CGFloat(clip.offsetInSession / sessionDuration) : 0
                     let x = pct * (geo.size.width - 22)
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.red.opacity(0.85))
+                        .fill(Color.crimsonBlaze.opacity(0.85))
                         .frame(width: 22, height: 30)
                         .overlay(Text("\(index + 1)").font(.system(size: 9, weight: .bold)).foregroundColor(.white))
                         .offset(x: x)
@@ -977,20 +435,18 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 Section("Recording") {
-                    SettingsRow(icon: "timer", color: .blue, label: "Before ClipIt") {
+                    SettingsRow(icon: "timer", color: .crimsonBlaze, label: "ClipIt Highlight Length") {
                         Stepper("\(recordingVM.bufferLengthSeconds)s",
                                 value: $recordingVM.bufferLengthSeconds, in: 5...60, step: 5)
                         .font(.system(size: 14))
                     }
                     
                     SettingsRow(icon: "video.fill", color: .green, label: "Video Quality") {
-                        // ✅ Clean, direct binding to your new main view model state property
                         Picker("", selection: $recordingVM.selectedVideoQuality) {
                             ForEach(CameraManager.VideoQuality.allCases) { quality in
                                 Text(quality.rawValue).tag(quality)
                             }
                         }
-                        // ✅ Fires exactly once per tap, updating the hardware safely in the background
                         .onChange(of: recordingVM.selectedVideoQuality) { oldQuality, newQuality in
                             recordingVM.updateVideoQuality(to: newQuality)
                         }
@@ -999,13 +455,7 @@ struct SettingsView: View {
                         .font(.system(size: 14))
                     }
                     
-                    SettingsRow(icon: "timer", color: .red, label: "After ClipIt") {
-                        Stepper("\(recordingVM.postRollSeconds)s",
-                                value: $recordingVM.postRollSeconds, in: 0...60, step: 5)
-                        .font(.system(size: 14))
-                    }
-                    
-                    SettingsRow(icon: "sun.min.fill", color: .orange, label: "Dim Screen While Recording") {
+                    SettingsRow(icon: "sunset.fill", color: .orange, label: "Dim Screen While Recording") {
                         Toggle("", isOn: $dimScreenDuringRecording)
                             .labelsHidden()
                     }
@@ -1013,9 +463,17 @@ struct SettingsView: View {
                 
                 Section("Bluetooth") {
                     NavigationLink(destination: BLEDeviceView()) {
-                        SettingsRow(icon: "antenna.radiowaves.left.and.right", color: .blue, label: "ClipIt Button") {
+                        SettingsRow(icon: "antenna.radiowaves.left.and.right", color: .gochujangRed, label: "ClipIt Button") {
                             Text("Configure").foregroundColor(.secondary).font(.system(size: 14))
                         }
+                    }
+                }
+                
+                Section("Storage") {
+                    SettingsRow(icon: "internaldrive.fill", color: .gray, label: "Storage Used") {
+                        Text(recordingVM.localStoreSize)
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 14))
                     }
                 }
                 
@@ -1023,26 +481,28 @@ struct SettingsView: View {
                     SettingsRow(icon: "star.fill", color: .purple, label: "Subscription") {
                         Text("Free").foregroundColor(.secondary).font(.system(size: 14))
                     }
-                    SettingsRow(icon: "cloud.fill", color: .gray, label: "Cloud Storage") {
+                    SettingsRow(icon: "cloud.fill", color: .blueMarble, label: "Cloud Storage") {
                         Text("Coming soon...").foregroundColor(.secondary).font(.system(size: 14))
                     }
                 }
                 
-                Section("Storage") {
-                    SettingsRow(icon: "internaldrive.fill", color: .gray, label: "Clips Storage Used") {
-                        Text(recordingVM.localStoreSize)
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 14))
+                Section("About") {
+                    NavigationLink(destination: AboutView()) {
+                        SettingsRow(icon: "info.circle.fill", color: .cosmosBlue, label: "About") {
+                            EmptyView()
+                        }
                     }
                 }
                 
                 Section {
-                    Label("2026 ClipIt LLC • Version 1.3", systemImage: "c.circle")
+                    Text("2026 ClipIt LLC • Version 1.3")
                         .font(.footnote)
                         .foregroundColor(.gray)
                 }
             }
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.large)
             .onAppear { recordingVM.updateStorageSize() }
         }
     }

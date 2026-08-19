@@ -4,62 +4,38 @@ struct RecordSettingsSheet: View {
     @EnvironmentObject var recordingVM: RecordingViewModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var before: Double = 10
-    @State private var after: Double = 10
+    @State private var preceding: Double = 10
 
+    private let minSeconds: Double = 1
     private let maxSeconds: Double = 60
-
-    private var totalClipLength: Int { Int(before) + Int(after) }
+    private let quickOptions: [Int] = [5, 10, 15, 20, 30, 60]
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                clipLengthVisual
-                    .padding(.top, 28)
+            VStack(spacing: 32) {
+                header
+                    .padding(.top, 20)
+
+                precedingSlider
                     .padding(.horizontal, 24)
 
-                Divider()
-                    .padding(.top, 28)
-
-                VStack(spacing: 28) {
-                    sliderRow(
-                        label: "Before ClipIt",
-                        sublabel: "Captured before you tap Clip It",
-                        value: $before,
-                        color: .blue
-                    )
-                    sliderRow(
-                        label: "After ClipIt",
-                        sublabel: "Captured after you tap Clip It",
-                        value: $after,
-                        color: .red
-                    )
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 28)
+                quickSnapRow
+                    .padding(.horizontal, 24)
 
                 Spacer()
-
-                HStack(spacing: 6) {
-                    Image(systemName: "clock")
-                        .foregroundColor(.secondary)
-                        .font(.system(size: 14))
-                    Text("Each clip will be \(totalClipLength) seconds long")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.bottom, 32)
             }
-            .navigationTitle("Clip timing")
+            .frame(maxWidth: .infinity)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .foregroundColor(.white.opacity(0.7))
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
-                        recordingVM.bufferLengthSeconds = Int(before)
-                        recordingVM.postRollSeconds = Int(after)
+                        recordingVM.bufferLengthSeconds = Int(preceding)
                         dismiss()
                     }
                     .fontWeight(.semibold)
@@ -67,127 +43,111 @@ struct RecordSettingsSheet: View {
             }
         }
         .onAppear {
-            before = Double(recordingVM.bufferLengthSeconds)
-            after  = Double(recordingVM.postRollSeconds)
+            preceding = Double(recordingVM.bufferLengthSeconds)
         }
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
     }
 
-    // MARK: - Clip length visual
+    // MARK: - Header
 
-    private var clipLengthVisual: some View {
-        VStack(spacing: 10) {
-            GeometryReader { geo in
-                let totalWidth = geo.size.width
-                let halfWidth  = totalWidth / 2
-
-                // Each side fills proportionally up to maxSeconds
-                let beforeWidth = (before / maxSeconds) * halfWidth
-                let afterWidth  = (after  / maxSeconds) * halfWidth
-
-                ZStack {
-                    // Track
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(white: 0.15))
-                        .frame(width: totalWidth, height: 44)
-
-                    // Before fill — grows leftward from center
-                    HStack(spacing: 0) {
-                        Spacer()
-                        RoundedRectangle(cornerRadius: 0)
-                            .fill(Color.blue.opacity(0.4))
-                            .frame(width: beforeWidth, height: 44)
-                    }
-                    .frame(width: halfWidth)
-                    .frame(width: totalWidth, alignment: .leading)
-                    .clipShape(
-                        UnevenRoundedRectangle(
-                            topLeadingRadius: beforeWidth >= halfWidth ? 10 : 0,
-                            bottomLeadingRadius: beforeWidth >= halfWidth ? 10 : 0,
-                            bottomTrailingRadius: 0,
-                            topTrailingRadius: 0
-                        )
-                    )
-
-                    // After fill — grows rightward from center
-                    HStack(spacing: 0) {
-                        RoundedRectangle(cornerRadius: 0)
-                            .fill(Color.red.opacity(0.4))
-                            .frame(width: afterWidth, height: 44)
-                        Spacer()
-                    }
-                    .frame(width: halfWidth)
-                    .frame(width: totalWidth, alignment: .trailing)
-                    .clipShape(
-                        UnevenRoundedRectangle(
-                            topLeadingRadius: 0,
-                            bottomLeadingRadius: 0,
-                            bottomTrailingRadius: afterWidth >= halfWidth ? 10 : 0,
-                            topTrailingRadius: afterWidth >= halfWidth ? 10 : 0
-                        )
-                    )
-
-                    // Center marker — always perfectly centered
-                    VStack(spacing: 3) {
-                        Rectangle()
-                            .fill(Color.white)
-                            .frame(width: 2, height: 28)
-                        Text("Clip It")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.white)
-                    }
-                    .frame(width: totalWidth, alignment: .center)
-                }
-                .frame(width: totalWidth, height: 44)
+    private var header: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 7) {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: 17, weight: .bold))
+                Text("ClipIt Save Time")
+                    .font(.system(size: 21, weight: .bold))
             }
-            .frame(height: 44)
+            .foregroundColor(.white)
 
-            // Labels
-            HStack {
-                Text("-\(Int(before))s")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.blue)
-                Spacer()
-                Text("0")
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .foregroundColor(Color(white: 0.45))
-                Spacer()
-                Text("+\(Int(after))s")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.red)
-            }
+            Text("Save the preceding seconds")
+                .font(.system(size: 14))
+                .foregroundColor(.white.opacity(0.5))
         }
     }
 
-    // MARK: - Slider row
+    // MARK: - Preceding-seconds slider
 
-    private func sliderRow(
-        label: String,
-        sublabel: String,
-        value: Binding<Double>,
-        color: Color
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(label)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.primary)
-                Spacer()
-                Text("\(Int(value.wrappedValue)) sec")
-                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
-                    .foregroundColor(color)
-                    .contentTransition(.numericText())
-                    .animation(.snappy, value: value.wrappedValue)
+    private var precedingSlider: some View {
+        let trackHeight: CGFloat = 56
+
+        return GeometryReader { geo in
+            let w = geo.size.width
+            let frac = CGFloat((preceding - minSeconds) / (maxSeconds - minSeconds))
+            let fillWidth = max(trackHeight, frac * w)
+            let thumbX = min(max(fillWidth, trackHeight / 2), w - 2)
+
+            ZStack(alignment: .leading) {
+                // Background track
+                RoundedRectangle(cornerRadius: trackHeight / 2, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .frame(width: w, height: trackHeight)
+
+                // Filled portion
+                RoundedRectangle(cornerRadius: trackHeight / 2, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.blue, Color.blue.opacity(0.65)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: fillWidth, height: trackHeight)
+
+                // Value label
+                Text("\(Int(preceding))s")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.leading, 18)
+
+                // Pause-style thumb marker
+                HStack(spacing: 3) {
+                    Capsule().fill(Color.white).frame(width: 3, height: trackHeight * 0.5)
+                    Capsule().fill(Color.white).frame(width: 3, height: trackHeight * 0.5)
+                }
+                .position(x: thumbX, y: trackHeight / 2)
             }
+            .frame(width: w, height: trackHeight)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let x = min(max(value.location.x, 0), w)
+                        let f = Double(x / w)
+                        let sec = minSeconds + f * (maxSeconds - minSeconds)
+                        withAnimation(.interactiveSpring()) {
+                            preceding = min(max(sec.rounded(), minSeconds), maxSeconds)
+                        }
+                    }
+            )
+        }
+        .frame(height: trackHeight)
+    }
 
-            Text(sublabel)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+    // MARK: - Quick snap buttons
 
-            Slider(value: value, in: 5...maxSeconds, step: 5)
-                .tint(color)
+    private var quickSnapRow: some View {
+        HStack(spacing: 8) {
+            ForEach(quickOptions, id: \.self) { option in
+                let isSelected = Int(preceding) == option
+
+                Button {
+                    withAnimation(.snappy) { preceding = Double(option) }
+                } label: {
+                    Text("\(option)s")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(isSelected ? .white : .white.opacity(0.55))
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            Capsule()
+                                .fill(isSelected ? Color.blue : Color.white.opacity(0.08))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }

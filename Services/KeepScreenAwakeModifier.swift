@@ -22,8 +22,8 @@ struct KeepScreenAwakeModifier: ViewModifier {
                 // Always restore standard auto-lock when leaving the view
                 setIdleTimerDisabled(false)
             }
-            .onChange(of: keepAwake) { newValue in
-                setIdleTimerDisabled(newValue)
+            .onChange(of: keepAwake) { oldValue, newValue in
+                UIApplication.shared.isIdleTimerDisabled = newValue
             }
     }
 

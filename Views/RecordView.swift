@@ -6,7 +6,6 @@ struct RecordView: View {
     @EnvironmentObject var multipeerManager: MultipeerManager
     @ObservedObject var bleVM: BLEViewModel
     @Binding var selectedTab: Int
-    @State private var showSettings = false
     @State private var orientation = UIDevice.current.orientation
     
     // Call Monitor Interruption Interface
@@ -20,12 +19,10 @@ struct RecordView: View {
     
     // Pinch-to-zoom
     @State private var lastZoomFactor: CGFloat = 1.0
-    @State private var uiZoomFactor: CGFloat = 2.0
     
     // Tap-to-focus + inline brightness slider
     @State private var focusPoint: CGPoint? = nil
     @State private var showFocusIndicator = false
-    @State private var showBrightnessSlider = false
     @State private var focusHideTask: DispatchWorkItem?
     
     // Camera controls panel
@@ -40,15 +37,13 @@ struct RecordView: View {
     
     // Variables for multiview phone setup
     @State private var showMultiCamSheet = false
-    
     @State private var transferClipsOnCompletion = false
     @State private var showImportPrompt = false
     
     // Dimming screen for recording
     @AppStorage("dimScreenDuringRecording") private var dimScreenDuringRecording = false
     @State private var originalBrightness: CGFloat = 0.5
-    @Environment(\.scenePhase) var scenePhase // To detect if the app goes to the background
-    
+    @Environment(\.scenePhase) var scenePhase
     
     private var exposureBiasBinding: Binding<Double> {
         Binding(
@@ -58,310 +53,365 @@ struct RecordView: View {
     }
     
     var body: some View {
-            ZStack {
-                cameraPreview
-                
-                // Shadow Gradient
-                LinearGradient(
-                    colors: [Color.black.opacity(0.24), Color.clear, Color.black.opacity(0.42)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-                
-                // Tap-to-focus indicator overlay
-                if showFocusIndicator, let pt = focusPoint {
-                    FocusIndicatorView(
-                        showBrightness: showBrightnessSlider,
-                        exposureBias: exposureBiasBinding,
-                        onSliderChanged: { rescheduleBrightnessHide() }
-                    )
+        ZStack {
+            cameraPreview
+            
+            // Shadow Gradient
+            LinearGradient(
+                colors: [Color.black.opacity(0.24), Color.clear, Color.black.opacity(0.42)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            
+            // Tap-to-focus indicator overlay
+            if showFocusIndicator, let pt = focusPoint {
+                FocusIndicatorView()
                     .position(pt)
-                    .allowsHitTesting(showBrightnessSlider)
+                    .allowsHitTesting(false)
                     .zIndex(2)
                     .id(focusID)
-                }
-                
-                GeometryReader { geo in
-                    let isLandscape = geo.size.width > geo.size.height
-                    let isLandscapeLeft = orientation == .landscapeLeft
-                        
-                        ZStack {
-                            // Gesture Capture Layer
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .gesture(
-                                    MagnificationGesture()
-                                        .onChanged { value in
-                                            let dynamicDelta = value.magnitude
-                                            let baseZoom = recordingVM.cameraManager.zoomFactor
-                                            let targetZoom = lastZoomFactor == 1.0 ? baseZoom * dynamicDelta : baseZoom + (value - lastZoomFactor)
-                                            lastZoomFactor = value
-                                            recordingVM.cameraManager.setZoom(targetZoom)
-                                        }
-                                        .onEnded { _ in
-                                            lastZoomFactor = 1.0
-                                        }
-                                )
-                                .onTapGesture { location in
-                                    if showCameraControls {
-                                        withAnimation { showCameraControls = false }
-                                    }
-                                    handleTapToFocus(at: location)
-                                }
-                            
-                            // 🎛️ CORE INTERFACE CONTROLS CONTAINER LAYER
-                            VStack(spacing: 0) {
-                                
-                                // 1. Top Bar Items (Always at the top)
-                                topOverlayView(isLandscape: isLandscape)
-                                    .padding(.trailing, isLandscape && isLandscapeLeft ? 120 : 0)
-                                    .padding(.leading, isLandscape && !isLandscapeLeft ? 120 : 0)
-                                
-                                Spacer()
-                                
-                                // 2. Dynamic Adaptive Lower Controls Matrix
-                                if isLandscape {
-                                    HStack(alignment: .center) {
-                                        if isLandscapeLeft {
-                                            // 📱 Phone left: Badge on LEFT edge, TOP
-                                            VStack {
-                                                timingBadge.padding(.top, -54)
-                                                Spacer()
-                                            }
-                                            
-                                            Spacer()
-                                            
-                                            if showCameraControls {
-                                                VStack {
-                                                    Spacer()
-                                                    cameraControlsPanel.padding(.bottom, 75)
-                                                }
-                                            }
-                                            
-                                            sideOverlayView(isLandscapeLeft: isLandscapeLeft)
-                                            
-                                        } else {
-                                            // 📱 Phone right: Controls on left edge
-                                            sideOverlayView(isLandscapeLeft: isLandscapeLeft)
-                                            
-                                            if showCameraControls {
-                                                VStack {
-                                                    Spacer()
-                                                    cameraControlsPanel.padding(.bottom, 75)
-                                                }
-                                            }
-                                            
-                                            Spacer()
-                                            
-                                            // ✅ THE FIX: Badge on RIGHT edge, BOTTOM!
-                                            VStack {
-                                                Spacer() // Pushes the badge all the way down
-                                                timingBadge.padding(.bottom, 36)
-                                            }
-                                        }
-                                    }
-                                    .safeAreaPadding(.horizontal)
-                                    
-                                } else {
-                                    // Default Portrait configuration layout block
-                                    VStack {
-                                        Spacer()
-                                        if showCameraControls {
-                                            cameraControlsPanel
-                                        }
-                                        bottomOverlay
-                                    }
-                                }
-                            }
-                            .zIndex(1)
-                            
-                            // Clip saved notification banner overlay
-                            VStack {
-                                Spacer()
-                                if showClipSavedBanner {
-                                    Text(clipSavedText)
-                                        .font(.system(size: 16, weight: .heavy))
-                                        .foregroundColor(.red)
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 20)
-                                        .background(.ultraThinMaterial)
-                                        .clipShape(Capsule())
-                                        .shadow(color: Color.black.opacity(0.25), radius: 10, y: 4)
-                                        .transition(.opacity)
-                                        .padding(.bottom, isLandscape ? 80 : showCameraControls ? 240 : 175)
-                                }
-                            }
-                            .animation(.easeInOut(duration: 0.25), value: showClipSavedBanner)
-                            .zIndex(2)
-                        }
-                        .animation(.easeInOut(duration: 0.25), value: isLandscape)
-                    }
-                    .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-                    let newOrientation = UIDevice.current.orientation
-                    if newOrientation.isValidInterfaceOrientation { orientation = newOrientation }
-                }
-                
-                // 📞 PHONE CALL INTERRUPTION BOX OVERLAY
-                callInterruptionOverlayView
             }
-                // 📱 OVERRIDE AUTO-LOCK & KEEP SCREEN AWAKE CONTINUOUSLY
-                .keepScreenAwake()
-                // ✅ 1. ALL Root Layout Pipeline Modifiers attach safely here to the ZStack!
-                .ignoresSafeArea()
-                .animation(.easeInOut(duration: 0.25), value: orientation)
-                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showCameraControls)
-                .sheet(isPresented: $showMultiCamSheet) {
-                    MultiCamConnectionSheet(multipeerManager: multipeerManager)
-                }
-                .onReceive(bleVM.clipTrigger) { _ in
-                    if recordingVM.recordingState == .active {
-                        recordingVM.triggerClip()
-                        showClipSavedConfirmation()
-                        // 📡 Broadcast unique payload to Follower Cam:
-                        multipeerManager.sendCommand(.triggerClip(clipNumber: 1, uuid: UUID()))
-                    }
-                }
-                .onReceive(bleVM.toggleRecordTrigger) { _ in
-                    handleRecordTap()
-                }
-                .sheet(isPresented: $showSettings) {
-                    RecordSettingsSheet()
-                        .environmentObject(recordingVM)
-                }
-                .onAppear {
-                    callMonitor.setupViewModel(recordingVM)
-                    recordingVM.cameraManager.startIfNeeded()
-                    DispatchQueue.main.async {
-                        recordingVM.cameraManager.requestPermissionAndSetup()
-                    }
-                    if !bleVM.bleState.isConnected { bleVM.startScanning() }
+            
+            GeometryReader { geo in
+                let isLandscape = geo.size.width > geo.size.height
+                let isLandscapeRight = orientation == .landscapeRight
+                let isLandscapeLeft = !isLandscapeRight // Default landscape mode to left
+                
+                ZStack {
+                    // Gesture Capture Layer
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .gesture(
+                            MagnificationGesture()
+                                .onChanged { value in
+                                    let dynamicDelta = value.magnitude
+                                    let baseZoom = recordingVM.cameraManager.zoomFactor
+                                    let targetZoom = lastZoomFactor == 1.0 ? baseZoom * dynamicDelta : baseZoom + (value - lastZoomFactor)
+                                    lastZoomFactor = value
+                                    recordingVM.cameraManager.setZoom(targetZoom)
+                                }
+                                .onEnded { _ in
+                                    lastZoomFactor = 1.0
+                                }
+                        )
+                        .onTapGesture { location in
+                            if showCameraControls {
+                                withAnimation { showCameraControls = false }
+                            }
+                            handleTapToFocus(at: location)
+                        }
                     
-                    multipeerManager.onHighlightReceived = { [weak recordingVM] url in
-                        Task { @MainActor in
-                            recordingVM?.attachImportedHighlight(fileURL: url)
-                        }
+                    // 🎛️ Dynamic Orientation Layout Switcher
+                    if isLandscape {
+                        landscapeOverlayView(isLandscapeLeft: isLandscapeLeft)
+                            .zIndex(1)
+                    } else {
+                        portraitOverlayView
+                            .zIndex(1)
                     }
-                }
-                .onDisappear {
-                    bleVM.stopScanning()
-                }
-                .onChange(of: callMonitor.isOnCall) { oldValue, isNowOnCall in
-                    if isNowOnCall {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                            showCallInterruptionOverlay = true
-                        }
-                    }
-                }
-                .onChange(of: multipeerManager.latestCommandReceived) { oldCommand, newCommand in
-                    guard let command = newCommand else { return }
                     
-                    switch command {
-                    case .startRecording:
-                        if recordingVM.recordingState != .active {
-                            transferClipsOnCompletion = false
-                            recordingVM.requestStartSession(multipeerManager: multipeerManager)
+                    // Clip saved notification banner overlay
+                    VStack {
+                        Spacer()
+                        if showClipSavedBanner {
+                            Text(clipSavedText)
+                                .font(.system(size: 16, weight: .heavy))
+                                .foregroundColor(.crimsonBlaze)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 20)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
+                                .shadow(color: Color.black.opacity(0.25), radius: 10, y: 4)
+                                .transition(.opacity)
                         }
-                    case .stopRecording:
-                        if recordingVM.recordingState == .active {
-                            recordingVM.endSession()
-                        }
-                    case .triggerClip(_, _):
-                        if recordingVM.recordingState == .active {
-                            recordingVM.triggerClip()
-                            showClipSavedConfirmation()
-                        }
-                    case .updateSettings(let before, let after):
-                        withAnimation {
-                            recordingVM.bufferLengthSeconds = before
-                            recordingVM.postRollSeconds = after
-                        }
-                    case .requestFullSessionVideo(let sessionID):
-                        print("Secondary camera received request for full session video: \(sessionID)")
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            multipeerManager.showFullVideoRequestAlert = true
-                        }
-                        
-                    // ✅ ADD THIS CASE TO RE-ESTABLISH EXHAUSTIVENESS
-                    case .startRecordingWithID(let sessionID):
-                        print("Secondary camera received command to start recording with specific ID: \(sessionID)")
-                        if recordingVM.recordingState != .active {
-                            transferClipsOnCompletion = false
-                            // Implement matching logic or pass the sessionID down if required by your ViewModel:
-                            recordingVM.requestStartSession(multipeerManager: multipeerManager)
-                        }
+                        Spacer()
+                    }
+                    .animation(.easeInOut(duration: 0.25), value: showClipSavedBanner)
+                    .zIndex(2)
+                }
+                .animation(.easeInOut(duration: 0.25), value: isLandscape)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                let newOrientation = UIDevice.current.orientation
+                if newOrientation.isValidInterfaceOrientation { orientation = newOrientation }
+            }
+            
+            // Phone call interruption overlay
+            callInterruptionOverlayView
+            
+            // 🎯 Centered "Saving Your Clips!" popup
+            if recordingVM.isExtractingHighlights {
+                HighlightExtractionProgressView(
+                    currentCount: recordingVM.currentExtractionProgress,
+                    totalCount: recordingVM.totalExtractionCount
+                )
+                .frame(maxWidth: 340)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                .zIndex(5)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: recordingVM.isExtractingHighlights)
+        .keepScreenAwake()
+        .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.25), value: orientation)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showCameraControls)
+        .sheet(isPresented: $showMultiCamSheet) {
+            MultiCamConnectionSheet(multipeerManager: multipeerManager)
+        }
+        .onReceive(bleVM.clipTrigger) { _ in
+            triggerClipIt()
+        }
+        .onReceive(bleVM.toggleRecordTrigger) { _ in
+            handleRecordTap()
+        }
+        .onAppear {
+            callMonitor.setupViewModel(recordingVM)
+            recordingVM.cameraManager.startIfNeeded()
+            if !bleVM.bleState.isConnected { bleVM.startScanning() }
+            
+            multipeerManager.onHighlightReceived = { [weak recordingVM] url in
+                Task { @MainActor in
+                    recordingVM?.attachImportedHighlight(fileURL: url)
+                }
+            }
+        }
+        .onDisappear {
+            bleVM.stopScanning()
+        }
+        .onChange(of: recordingVM.showCallEndedOverlay) { _, shouldShow in
+            if shouldShow {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    showCallInterruptionOverlay = true
+                }
+                recordingVM.showCallEndedOverlay = false
+            }
+        }
+        .onChange(of: multipeerManager.latestCommandReceived) { _, command in
+            guard let command = command else { return }
+            handleSyncCommand(command)
+            multipeerManager.latestCommandReceived = nil
+        }
+        .onChange(of: recordingVM.bufferLengthSeconds) { _, newValue in
+            multipeerManager.sendCommand(.updateSettings(secondsBefore: newValue, secondsAfter: recordingVM.postRollSeconds))
+        }
+        .onChange(of: recordingVM.postRollSeconds) { _, newValue in
+            multipeerManager.sendCommand(.updateSettings(secondsBefore: recordingVM.bufferLengthSeconds, secondsAfter: newValue))
+        }
+        .onChange(of: recordingVM.justFinishedSessionClips) { _, newURLs in
+            guard !newURLs.isEmpty else { return }
+            
+            if transferClipsOnCompletion {
+                print("🎬 Extraction complete! Secondary camera auto-offloading \(newURLs.count) highlights...")
+                startOffloadingSecondaryHighlights(urls: newURLs)
+                transferClipsOnCompletion = false
+                recordingVM.justFinishedSessionClips = []
+            }
+        }
+        .onChange(of: recordingVM.recordingState) { _, newState in
+            if newState == .active {
+                if dimScreenDuringRecording {
+                    originalBrightness = UIScreen.main.brightness
+                    UIScreen.main.brightness = 0.01
+                }
+            } else {
+                if dimScreenDuringRecording {
+                    UIScreen.main.brightness = originalBrightness
+                }
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase != .active && dimScreenDuringRecording {
+                UIScreen.main.brightness = originalBrightness
+            }
+        }
+    }
+    
+    // MARK: - Multipeer Command Handler
 
-                    case .requestHighlights:
-                        if !recordingVM.justFinishedSessionClips.isEmpty {
-                            startOffloadingSecondaryHighlights(urls: recordingVM.justFinishedSessionClips)
-                            recordingVM.justFinishedSessionClips = []
+    private func handleSyncCommand(_ command: SyncCommand) {
+        switch command {
+        case .startRecording:
+            if recordingVM.recordingState != .active {
+                transferClipsOnCompletion = false
+                recordingVM.requestStartSession(multipeerManager: multipeerManager)
+            }
+        case .stopRecording:
+            if recordingVM.recordingState == .active {
+                recordingVM.endSession(navigateToClips: false)
+            }
+        case .triggerClip(_, _):
+            if recordingVM.recordingState == .active {
+                recordingVM.triggerClip()
+                showClipSavedConfirmation()
+            }
+        case .updateSettings(let before, let after):
+            withAnimation {
+                recordingVM.bufferLengthSeconds = before
+                recordingVM.postRollSeconds = after
+            }
+        case .requestFullSessionVideo(let sessionID):
+            print("Secondary camera received request for full session video: \(sessionID)")
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                multipeerManager.showFullVideoRequestAlert = true
+            }
+            
+        case .startRecordingWithID(let sessionID):
+            print("Secondary camera received command to start recording with specific ID: \(sessionID)")
+            if recordingVM.recordingState != .active {
+                transferClipsOnCompletion = false
+                recordingVM.requestStartSession(multipeerManager: multipeerManager)
+            }
+
+        case .requestHighlights:
+            if !recordingVM.justFinishedSessionClips.isEmpty {
+                startOffloadingSecondaryHighlights(urls: recordingVM.justFinishedSessionClips)
+                recordingVM.justFinishedSessionClips = []
+            } else {
+                transferClipsOnCompletion = true
+            }
+        case .preparingToSendHighlights(let total):
+            print("Host expecting \(total) highlights coming from secondary camera.")
+            
+        case .finishedSendingHighlights:
+            recordingVM.isImportingSecondary = false
+        }
+    }
+    
+    // MARK: - Landscape Layout View
+
+    @ViewBuilder
+    private func landscapeOverlayView(isLandscapeLeft: Bool) -> some View {
+        ZStack {
+            // 1. TOP BAR CONTROLS
+            VStack {
+                ZStack {
+                    HStack(alignment: .top) {
+                        if isLandscapeLeft {
+                            VStack(alignment: .leading, spacing: 6) {
+                                timingBadge
+                                connectedBadge
+                            }
+                            
+                            Spacer()
+                            
+                            StaticZoomControl(cameraManager: recordingVM.cameraManager)
                         } else {
-                            transferClipsOnCompletion = true
+                            StaticZoomControl(cameraManager: recordingVM.cameraManager)
+                            
+                            Spacer()
+                            
+                            VStack(alignment: .trailing, spacing: 6) {
+                                timingBadge
+                                connectedBadge
+                            }
                         }
-                    case .preparingToSendHighlights(let total):
-                        print("Host expecting \(total) highlights coming from secondary camera.")
-                        
-                    case .finishedSendingHighlights:
-                        recordingVM.isImportingSecondary = false
                     }
-                    
-                    multipeerManager.latestCommandReceived = nil
+
+                    recordingTimerBadge
                 }
-                .onChange(of: recordingVM.bufferLengthSeconds) { oldValue, newValue in
-                    multipeerManager.sendCommand(.updateSettings(secondsBefore: newValue, secondsAfter: recordingVM.postRollSeconds))
-                }
-                .onChange(of: recordingVM.postRollSeconds) { oldValue, newValue in
-                    multipeerManager.sendCommand(.updateSettings(secondsBefore: recordingVM.bufferLengthSeconds, secondsAfter: newValue))
-                }
-                .onChange(of: recordingVM.justFinishedSessionClips) { oldValue, newURLs in
-                    guard !newURLs.isEmpty else { return }
-                    
-                    if transferClipsOnCompletion {
-                        print("🎬 Extraction complete! Secondary camera auto-offloading \(newURLs.count) highlights...")
-                        startOffloadingSecondaryHighlights(urls: newURLs)
+                .padding(.horizontal, 36)
+                .padding(.top, 24)
+
+                // Status banners
+                if multipeerManager.isReceivingHighlightBatch {
+                    VStack(spacing: 4) {
+                        Text("Receiving Highlights...")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
                         
-                        transferClipsOnCompletion = false
-                        recordingVM.justFinishedSessionClips = []
+                        HighlightExtractionProgressView(
+                            currentCount: multipeerManager.receivedHighlightCount,
+                            totalCount: multipeerManager.expectedHighlightCount
+                        )
                     }
+                    .padding(.top, 10)
                 }
-                // 1. Recording State Check
-                .onChange(of: recordingVM.recordingState) { oldState, newState in
-                    if newState == .active {
-                        if dimScreenDuringRecording {
-                            // Store the user's starting brightness before dimming
-                            originalBrightness = UIScreen.main.brightness
-                            UIScreen.main.brightness = 0.01
+
+                Spacer()
+            }
+
+            // 2. Settings button
+            VStack {
+                HStack {
+                    if isLandscapeLeft {
+                        Spacer()
+                        CircleButton(systemImage: "gearshape.fill", size: 50, fill: Color.black.opacity(0.45)) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showCameraControls.toggle()
+                            }
                         }
                     } else {
-                        if dimScreenDuringRecording {
-                            // Restore original brightness when recording ends
-                            UIScreen.main.brightness = originalBrightness
+                        CircleButton(systemImage: "gearshape.fill", size: 50, fill: Color.black.opacity(0.45)) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showCameraControls.toggle()
+                            }
                         }
+                        Spacer()
                     }
                 }
+                .padding(.horizontal, 36)
+                .padding(.top, 280)
 
-                // 2. 🛡️ AUTO-BRIGHTNESS LOCK: Re-clamp brightness if iOS tries to raise it mid-recording
-                .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification)) { _ in
-                    if recordingVM.recordingState == .active && dimScreenDuringRecording {
-                        // If system auto-brightness tries to adjust it above 0.01, force it back down
-                        if UIScreen.main.brightness > 0.02 {
-                            UIScreen.main.brightness = 0.01
-                        }
-                    }
-                }
+                Spacer()
+            }
 
-                // 3. Scene Phase Check (Background Safety)
-                .onChange(of: scenePhase) { oldPhase, newPhase in
-                    if newPhase != .active && dimScreenDuringRecording {
-                        UIScreen.main.brightness = originalBrightness
-                    }
+            // 3. CENTER STACK: Record & ClipIt Button
+            HStack {
+                if isLandscapeLeft {
+                    Spacer()
+                    RecordControlGroup(
+                        isRecording: recordingVM.recordingState == .active,
+                        onRecordTap: { handleRecordTap() },
+                        onClipItTap: { triggerClipIt() },
+                        clipItOffset: CGSize(width: -120, height: 0)
+                    )
+                    .padding(.trailing, 45)
+                } else {
+                    RecordControlGroup(
+                        isRecording: recordingVM.recordingState == .active,
+                        onRecordTap: { handleRecordTap() },
+                        onClipItTap: { triggerClipIt() },
+                        clipItOffset: CGSize(width: 120, height: 0)
+                    )
+                    .padding(.leading, 45)
+                    Spacer()
                 }
             }
-    
+
+            // 4. SETTINGS DRAWER OVERLAY
+            if showCameraControls {
+                cameraControlsPanel(isLandscape: true)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+    }
+
+    // MARK: - Portrait Layout View
+
+    @ViewBuilder
+    private var portraitOverlayView: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                topOverlayView(isLandscape: false)
+                Spacer()
+                bottomOverlay
+            }
+
+            if showCameraControls {
+                cameraControlsPanel(isLandscape: false)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+    }
+
     // MARK: - Extracted Subviews
             
-        @ViewBuilder
+    @ViewBuilder
     private var callInterruptionOverlayView: some View {
         if showCallInterruptionOverlay {
             Color.black.opacity(0.65)
@@ -372,7 +422,7 @@ struct RecordView: View {
                     VStack(spacing: 22) {
                         Image(systemName: "phone.circle.fill")
                             .font(.system(size: 60))
-                            .foregroundColor(.red)
+                            .foregroundColor(.crimsonBlaze)
                         
                         Text("Recording Interrupted")
                             .font(.system(size: 20, weight: .bold, design: .rounded))
@@ -420,39 +470,22 @@ struct RecordView: View {
         focusID = UUID()
         recordingVM.cameraManager.setExposureBias(0.0)
         focusPoint = location
+        
         if let layer = previewLayerRef {
             recordingVM.cameraManager.focusAndExpose(at: location, in: layer)
         }
 
-        withAnimation(.easeIn(duration: 0.15)) { showFocusIndicator = true }
+        withAnimation(.easeIn(duration: 0.1)) { showFocusIndicator = true }
         focusHideTask?.cancel()
         
-        // FIX: Resolved strong retention cycle memory leak inside DispatchWorkItem
         let hideTask = DispatchWorkItem { [weak recordingVM] in
-            _ = recordingVM // Keeps deployment scope valid without retaining self
-            withAnimation(.easeOut(duration: 0.4)) {
+            _ = recordingVM
+            withAnimation(.easeOut(duration: 0.3)) {
                 self.showFocusIndicator = false
-                self.showBrightnessSlider = false
             }
         }
         focusHideTask = hideTask
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            withAnimation(.easeIn(duration: 0.2)) { showBrightnessSlider = true }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: hideTask)
-    }
-
-    private func rescheduleBrightnessHide() {
-        focusHideTask?.cancel()
-        let hideTask = DispatchWorkItem {
-            withAnimation(.easeOut(duration: 0.4)) {
-                self.showFocusIndicator = false
-                self.showBrightnessSlider = false
-            }
-        }
-        focusHideTask = hideTask
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: hideTask)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: hideTask)
     }
 
     // MARK: - Camera preview
@@ -469,152 +502,122 @@ struct RecordView: View {
         .ignoresSafeArea()
     }
 
-        // MARK: - Top overlay
-            @ViewBuilder
-            private func topOverlayView(isLandscape: Bool) -> some View {
-                VStack(spacing: 10) {
-                    HStack(alignment: .top) {
-                        // ✅ Instantly shows in Portrait mode because we removed the height restriction!
-                        if !isLandscape {
+    // MARK: - Top overlay
+    @ViewBuilder
+    private func topOverlayView(isLandscape: Bool) -> some View {
+        VStack(spacing: 10) {
+            ZStack {
+                HStack(alignment: .top) {
+                    if !isLandscape {
+                        VStack(alignment: .leading, spacing: 6) {
                             timingBadge
-                        }
-                        
-                        Spacer()
-
-                        VStack(alignment: .trailing, spacing: 8) {
-                            // BLE Indicator Capsule
-                            if bleVM.bleState.isConnected {
-                                HStack(spacing: 8) {
-                                    Circle().fill(Color.green).frame(width: 7, height: 7)
-                                    Text("Button Connected")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundColor(.white)
-                                    
-                                    if let batteryLevel = bleVM.remoteBatteryLevel {
-                                        Text("• \(batteryLevel)%")
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundColor(.white.opacity(0.8))
-                                        
-                                        Image(systemName: getBatteryIcon(for: batteryLevel))
-                                            .font(.system(size: 12))
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Capsule())
-                            }
-                            
-                            // Multi-Cam Control Button neatly nested right here!
-                            Button(action: { showMultiCamSheet = true }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: multipeerManager.isSuccessfullyConnected ? "link.circle.fill" : "link.circle")
-                                        .font(.system(size: 14))
-                                    Text(multipeerManager.isSuccessfullyConnected ? "Multi-Cam Connected" : "Link Multi-Cam")
-                                        .font(.system(size: 11, weight: .bold))
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(multipeerManager.isSuccessfullyConnected ? Color.blue : Color.black.opacity(0.5))
-                                .foregroundColor(.white)
-                                .clipShape(Capsule())
-                            }
+                            connectedBadge
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 45)
                     
-                    // Highlight Extraction Progress Bar UI
-                    if recordingVM.isExtractingHighlights {
-                        HighlightExtractionProgressView(
-                            currentCount: recordingVM.currentExtractionProgress,
-                            totalCount: recordingVM.totalExtractionCount
-                        )
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .padding(.top, 10)
-                    }
-                    // Sleek Incoming Highlights Tracker
-                    else if multipeerManager.isReceivingHighlightBatch {
-                        VStack(spacing: 4) {
-                            Text("Receiving Highlights...")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                            
-                            HighlightExtractionProgressView(
-                                currentCount: multipeerManager.receivedHighlightCount,
-                                totalCount: multipeerManager.expectedHighlightCount
-                            )
-                        }
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .padding(.top, 10)
-                    }
-                    // HUD Block
-                    else if multipeerManager.isSendingFullVideo || multipeerManager.isReceivingFullVideo {
-                        VStack(spacing: 6) {
-                            Text(multipeerManager.isSendingFullVideo ? "Sending Full Recording to Host..." : "Receiving Full Studio Recording...")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                            
-                            ProgressView(value: multipeerManager.fullVideoProgress, total: 1.0)
-                                .progressViewStyle(.linear)
-                                .tint(.blue)
-                                .frame(maxWidth: 220)
-                            
-                            Text("\(Int(multipeerManager.fullVideoProgress * 100))%")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundColor(.blue)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(.ultraThinMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .padding(.top, 10)
-                    }
+                    Spacer()
                 }
-                .transition(.opacity)
+
+                recordingTimerBadge
             }
-    
-    private var timingBadge: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text("Before:")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.7))
-                Text("\(recordingVM.bufferLengthSeconds)s")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
+            .padding(.horizontal, 16)
+            .padding(.top, 45)
+            
+            if multipeerManager.isReceivingHighlightBatch {
+                VStack(spacing: 4) {
+                    Text("Receiving Highlights...")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                    
+                    HighlightExtractionProgressView(
+                        currentCount: multipeerManager.receivedHighlightCount,
+                        totalCount: multipeerManager.expectedHighlightCount
+                    )
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .padding(.top, 10)
             }
-            HStack(spacing: 6) {
-                Text("After:")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.7))
-                Text("\(recordingVM.postRollSeconds)s")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
-            }
-            if recordingVM.recordingState == .active {
-                Text("REC \(recordingVM.elapsedLabel)")
-                    .foregroundColor(.red)
-                    .font(.system(size: 12, weight: .semibold))
+            else if multipeerManager.isSendingFullVideo || multipeerManager.isReceivingFullVideo {
+                VStack(spacing: 6) {
+                    Text(multipeerManager.isSendingFullVideo ? "Sending Full Recording to Host..." : "Receiving Full Studio Recording...")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    ProgressView(value: multipeerManager.fullVideoProgress, total: 1.0)
+                        .progressViewStyle(.linear)
+                        .tint(.blueMarble)
+                        .frame(maxWidth: 220)
+                    
+                    Text("\(Int(multipeerManager.fullVideoProgress * 100))%")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(.blueMarble)
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .padding(.top, 10)
             }
         }
+        .transition(.opacity)
+    }
+    
+    private var timingBadge: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "gobackward")
+                .font(.system(size: 12, weight: .semibold))
+            Text("\(recordingVM.bufferLengthSeconds)s")
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+        }
+        .foregroundColor(.white)
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.vertical, 8)
+        .background(Color.crimsonBlaze.opacity(0.35))
+        .clipShape(Capsule())
     }
 
+    @ViewBuilder
+    private var connectedBadge: some View {
+        if bleVM.bleState.isConnected {
+            HStack(spacing: 6) {
+                Circle().fill(Color.green).frame(width: 7, height: 7)
+                Text("Connected")
+                    .font(.system(size: 13, weight: .bold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.35))
+            .clipShape(Capsule())
+        }
+    }
+    
+    @ViewBuilder
+    private var recordingTimerBadge: some View {
+        if recordingVM.recordingState == .active {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.crimsonBlaze)
+                    .frame(width: 8, height: 8)
+                Text(recordingVM.elapsedLabel)
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.white)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.black.opacity(0.35))
+            .clipShape(Capsule())
+            .transition(.opacity)
+        }
+    }
+    
     // MARK: - Camera controls panel
 
-    private var cameraControlsPanel: some View {
-        VStack(spacing: 16) {
-            ClipItTimingBar(
-                beforeSeconds: $recordingVM.bufferLengthSeconds,
-                afterSeconds: $recordingVM.postRollSeconds
-            )
+    private func cameraControlsPanel(isLandscape: Bool) -> some View {
+        VStack(spacing: isLandscape ? 8 : 16) {
+            PrecedingTimeControl(seconds: $recordingVM.bufferLengthSeconds)
 
             HStack {
                 Text("Video Quality")
@@ -654,240 +657,95 @@ struct RecordView: View {
                 localQuality = recordingVM.cameraManager.videoQuality
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .frame(maxWidth: 450)
-        .frame(maxHeight: 140, alignment: .center)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
         .padding(.horizontal, 16)
-        .padding(.bottom, 8)
+        .padding(.vertical, isLandscape ? 10 : 16)
+        .frame(maxWidth: isLandscape ? 380 : 450)
+        .background(.ultraThinMaterial)
+        .background(Color.black.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(alignment: .topTrailing) {
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    showCameraControls = false
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white.opacity(0.75))
+                    .frame(width: 22, height: 22)
+                    .background(Color.white.opacity(0.18))
+                    .clipShape(Circle())
+            }
+            .padding(8)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, isLandscape ? 0 : 8)
     }
-        
-    // MARK: - Zoom Switcher & Sub-Elements
+
+    // MARK: - Bottom overlay (Portrait View Layer)
 
     @ViewBuilder
-        private var zoomButtons: some View {
-            // 💡 FIX: Hardware 2.0 = UI 1.0x. This ensures it stays on the 0.5 button up through 0.9x!
-            let isUltraWideActive = uiZoomFactor < 2.0
-            
-            let displayZoomValue = uiZoomFactor * 0.5
-            let displayString = String(format: "%.1f", displayZoomValue)
-            
-            // --- 0.5x Snap Button ---
-            Button(action: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                uiZoomFactor = 1.0
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                    recordingVM.cameraManager.setZoom(1.0)
-                }
-            }) {
-                Text(isUltraWideActive ? "\(displayString)x" : "0.5")
-                    .font(.system(size: 11, weight: .bold))
-                    // 💡 FIX: Reverted to Yellow text instead of black text
-                    .foregroundColor(isUltraWideActive ? .yellow : .white)
-                    .frame(width: 38, height: 38)
-                    // 💡 FIX: Reverted to dark gray transparent background
-                    .background(isUltraWideActive ? Color.black.opacity(0.6) : Color.black.opacity(0.35))
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(isUltraWideActive ? Color.yellow : Color.white.opacity(0.2), lineWidth: isUltraWideActive ? 1.5 : 0.5)
-                    )
-            }
-            .buttonStyle(.plain)
-            
-            // --- 1.0x Snap Button ---
-            Button(action: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                uiZoomFactor = 2.0
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                    recordingVM.cameraManager.setZoom(2.0)
-                }
-            }) {
-                Text(!isUltraWideActive ? "\(displayString)x" : "1x")
-                    .font(.system(size: 11, weight: .bold))
-                    // 💡 FIX: Reverted to Yellow text instead of black text
-                    .foregroundColor(!isUltraWideActive ? .yellow : .white)
-                    .frame(width: 38, height: 38)
-                    // 💡 FIX: Reverted to dark gray transparent background
-                    .background(!isUltraWideActive ? Color.black.opacity(0.6) : Color.black.opacity(0.35))
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(!isUltraWideActive ? Color.yellow : Color.white.opacity(0.2), lineWidth: !isUltraWideActive ? 1.5 : 0.5)
-                    )
-            }
-            .buttonStyle(.plain)
-        }
-
-        @ViewBuilder
-        private var appleZoomSwitcher: some View {
-            Group {
-                if orientation.isLandscape {
-                    VStack(spacing: 12) {
-                        zoomButtons
-                    }
-                } else {
-                    HStack(spacing: 12) {
-                        zoomButtons
+    private var bottomOverlay: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .center) {
+                CircleButton(systemImage: "gearshape.fill", size: 50, fill: Color.black.opacity(0.45)) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showCameraControls.toggle()
                     }
                 }
-            }
-            .padding(6)
-            .background(Color.black.opacity(0.25))
-            .background(.ultraThinMaterial)
-            .clipShape(Capsule())
-            .shadow(color: Color.black.opacity(0.2), radius: 8, y: 3)
-            // 💡 THE FIX: Actively listens to the nested camera manager.
-            // If you pinch the screen, the yellow rings will cross over automatically!
-            .onReceive(recordingVM.cameraManager.$zoomFactor) { newZoom in
-                self.uiZoomFactor = newZoom
-            }
-        }
+                .padding(.leading, 30)
 
-        @ViewBuilder
-        private var controlsSettingsButton: some View {
-            CircleButton(
-                systemImage: "slider.horizontal.3",
-                fill: showCameraControls ? Color.white.opacity(0.3) : Color.black.opacity(0.4)
-            ) {
-                withAnimation { showCameraControls.toggle() }
+                Spacer()
+                InteractiveZoomControl(cameraManager: recordingVM.cameraManager)
             }
-            .background(.ultraThinMaterial)
-            .clipShape(Circle())
-        }
+            .padding(.horizontal, 24)
 
-        @ViewBuilder
-        private var portraitControlsRow: some View {
-            ZStack {
-                RecordButton(isRecording: recordingVM.recordingState == .active) {
-                    handleRecordTap()
-                }
-                .id("portrait_record_button")
-
-                HStack {
-                    controlsSettingsButton
-                    Spacer()
-                    clipItButton.frame(width: 90, height: 70)
-                }
-                .padding(.horizontal, 24)
-            }
-            .padding(.vertical, 16)
-        }
-
-        // MARK: - Bottom overlay (Portrait View Layer)
-
-        @ViewBuilder
-        private var bottomOverlay: some View {
-            VStack(spacing: 0) {
-                appleZoomSwitcher
-                    .padding(.bottom, 24)
-                
-                portraitControlsRow
-            }
-            .background(
-                LinearGradient(
-                    colors: [Color.clear, Color.black.opacity(0.3), Color.black.opacity(0.75)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+            RecordControlGroup(
+                isRecording: recordingVM.recordingState == .active,
+                onRecordTap: { handleRecordTap() },
+                onClipItTap: { triggerClipIt() },
+                clipItOffset: CGSize(width: 0, height: -120)
             )
-            .padding(.bottom, 12)
-            .safeAreaPadding(.bottom, 60)
+            .offset(y: -50)
+            .padding(.bottom, -10)
         }
-
-        // MARK: - Side overlay (Landscape View Layer)
-
-        @ViewBuilder
-        private func sideOverlayView(isLandscapeLeft: Bool) -> some View {
-            HStack(spacing: 24) {
-                // Reverses the order of the zoom switch based on rotation!
-                if !isLandscapeLeft {
-                    controlButtonsColumn
-                }
-                
-                appleZoomSwitcher
-                
-                if isLandscapeLeft {
-                    controlButtonsColumn
-                }
-            }
-            .padding(.horizontal, 16)
-        }
-
-        // Extracted column forced to push apart via ZStack max height constraints
-        @ViewBuilder
-        private var controlButtonsColumn: some View {
-            ZStack {
-                // ✅ Use negative top padding to force it higher!
-                clipItButton
-                    .frame(height: 70)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .padding(.top, -25)
-                
-                // Center locked: Record Button
-                RecordButton(isRecording: recordingVM.recordingState == .active) {
-                    handleRecordTap()
-                }
-                .id("landscape_record_button")
-                .frame(maxHeight: .infinity, alignment: .center)
-                
-                // Bottom locked: Settings Wheel
-                controlsSettingsButton
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 25)
-            }
-            .frame(width: 100)
-            .frame(maxHeight: .infinity) // Absolute stretch prevents "smushing"
-            .padding(.vertical, 10)
-        }
+        .padding(.bottom, 20)
+        .safeAreaPadding(.bottom, 30)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    Color.black.opacity(0.15),
+                    Color.black.opacity(0.45),
+                    Color.black.opacity(0.65)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
+        )
+    }
     
-    private var clipItButton: some View {
-        Button {
-            if recordingVM.recordingState == .active {
-                recordingVM.triggerClip()
-                showClipSavedConfirmation()
-                // 📡 Broadcast to Follower Cam:
-                multipeerManager.sendCommand(.triggerClip(clipNumber: 1, uuid: UUID())) // 👈 Pass a unique UUID
-            }        } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .fill(recordingVM.recordingState == .active ? Color.red.opacity(0.92) : Color.white.opacity(0.14))
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .stroke(Color.white.opacity(0.16), lineWidth: 1)
-                VStack(spacing: 4) {
-                    Image(systemName: "bolt.fill").font(.system(size: 26, weight: .bold))
-                    Text("ClipIt!").font(.system(size: 22, weight: .heavy))
-                }
-                .foregroundColor(.white)
-            }
-            .frame(height: 88)
-            .shadow(color: Color.black.opacity(0.25), radius: 12, y: 5)
+    // Helper methods
+    private func triggerClipIt() {
+        if recordingVM.recordingState == .active {
+            recordingVM.triggerClip()
+            showClipSavedConfirmation()
+            multipeerManager.sendCommand(.triggerClip(clipNumber: 1, uuid: UUID()))
         }
-        .disabled(recordingVM.recordingState != .active)
-        .buttonStyle(.plain)
     }
 
     private func handleRecordTap() {
         if recordingVM.recordingState == .active {
-            // Normal recording buttons use navigation
-            recordingVM.endSession(navigateToClips: true)
-            // 📡 Broadcast to Follower Cam to stop as well:
+            recordingVM.endSession(navigateToClips: false)
             multipeerManager.sendCommand(.stopRecording)
             
-            // 🎬 MULTI-CAM HOST LOGIC:
-            // If we are the Leader and have connected devices, ask to import!
             if multipeerManager.isHost && !multipeerManager.connectedPeers.isEmpty {
                 showImportPrompt = true
             }
-            
         } else {
-            // 🧼 FIX: Reset transfer pipeline flags for the new session
             transferClipsOnCompletion = false
-            
             recordingVM.requestStartSession(multipeerManager: multipeerManager)
-            // 📡 Broadcast to Follower Cam to start:
             multipeerManager.sendCommand(.startRecording)
         }
     }
@@ -897,7 +755,6 @@ struct RecordView: View {
         clipSavedText = "Clip saved at \(recordingVM.elapsedLabel)!"
         withAnimation(.easeInOut(duration: 0.2)) { showClipSavedBanner = true }
         
-        // FIX: Replaced explicit struct retention capture leak
         let task = DispatchWorkItem { [weak recordingVM] in
             _ = recordingVM
             withAnimation(.easeOut(duration: 0.5)) { self.showClipSavedBanner = false }
@@ -908,10 +765,7 @@ struct RecordView: View {
     
     // MARK: - Post-Game Network Pipeline
 
-    // 🌟 NEW: Helper function to announce batch size before sending
     private func startOffloadingSecondaryHighlights(urls: [URL]) {
-        // 🌟 ITEM 2 UI FIX: Initialize the outbound batch counters on the Main Actor
-        // This instantly causes the secondary phone's progress bar overlay to appear!
         Task { @MainActor in
             multipeerManager.expectedSendingHighlightCount = urls.count
             multipeerManager.sentHighlightCount = 0
@@ -919,14 +773,10 @@ struct RecordView: View {
             multipeerManager.isTransferringFile = true
         }
         
-        // 1. Tell primary phone we are sending exactly X files
         multipeerManager.sendCommand(.preparingToSendHighlights(total: urls.count))
-        
-        // 2. Start your existing recursive loop
         sendClipsSequentially(urls: urls)
     }
 
-    /// Recursively transmits files one-by-one to avoid clogging multipeer session pipes
     private func sendClipsSequentially(urls: [URL]) {
         var queue = urls
         guard !queue.isEmpty else {
@@ -936,10 +786,9 @@ struct RecordView: View {
         }
         
         let nextClipURL = queue.removeFirst()
-        print("📤 Offloading secondary angle view: \(nextClipURL.lastPathComponent)")
+        print("MB Offloading secondary angle view: \(nextClipURL.lastPathComponent)")
         
         multipeerManager.sendLargeFile(fileURL: nextClipURL, isFullSessionVideo: false) { success in
-            // When this specific file finishes transferring, process the next item in the queue
             DispatchQueue.main.async {
                 if success {
                     print("✅ Successfully moved file. Moving onto next clip in queue...")
@@ -952,142 +801,367 @@ struct RecordView: View {
     }
 }
 
-// MARK: - ClipIt Timing Bar
+// MARK: - Static Zoom Control for Landscape (No Drag Slider)
 
-private struct ClipItTimingBar: View {
-    @Binding var beforeSeconds: Int
-    @Binding var afterSeconds: Int
+private struct StaticZoomControl: View {
+    @ObservedObject var cameraManager: CameraManager
 
-    private let minSecBefore = 5
-    private let minSecAfter = 0
-    private let maxSec = 60
-    private let step = 5
-
-    private let barH: CGFloat = 44
-    private let bracketW: CGFloat = 18
-    private let centerBadgeW: CGFloat = 30 // Explicit width of the center "ClipIt" anchor
+    private var currentUIZoom: CGFloat {
+        cameraManager.zoomFactor * 0.5
+    }
 
     var body: some View {
-        VStack(spacing: 8) {
-            GeometryReader { geo in
-                let W = geo.size.width
-                let half = W / 2
-                
-                // Establish visual boundaries flanking the center text badge
-                let leftEdgeOfCenter = half - (centerBadgeW / 2)
-                let rightEdgeOfCenter = half + (centerBadgeW / 2)
-
-                // Linear percentage from 0s to 60s
-                let beforeFrac = CGFloat(beforeSeconds) / CGFloat(maxSec)
-                let afterFrac = CGFloat(afterSeconds) / CGFloat(maxSec)
-
-                // Calculate exact tracking positions for the brackets
-                let leftAvailableTravel = leftEdgeOfCenter - (bracketW / 2)
-                let leftX = leftEdgeOfCenter - (beforeFrac * leftAvailableTravel)
-
-                let rightAvailableTravel = (W - (bracketW / 2)) - rightEdgeOfCenter
-                let rightX = rightEdgeOfCenter + (afterFrac * rightAvailableTravel)
-
-                ZStack(alignment: .topLeading) {
-                    // Track Background
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.white.opacity(0.12))
-                        .frame(width: W, height: barH)
-
-                    // BEFORE Highlight Area (Blue)
-                    Rectangle()
-                        .fill(Color.blue.opacity(0.5))
-                        .frame(width: max(0, leftEdgeOfCenter - (leftX - bracketW / 2)), height: barH)
-                        .offset(x: leftX - bracketW / 2)
-
-                    // AFTER Highlight Area (Red) - Drops to exactly 0 width when afterSeconds == 0
-                    Rectangle()
-                        .fill(Color.red.opacity(0.5))
-                        .frame(width: max(0, (rightX + bracketW / 2) - rightEdgeOfCenter), height: barH)
-                        .offset(x: rightEdgeOfCenter)
-
-                    // Center Timeline Anchor
-                    VStack(spacing: 2) {
-                        Rectangle()
-                            .fill(Color.white)
-                            .frame(width: 2, height: barH - 14)
-                        Text("ClipIt")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundColor(.white.opacity(0.75))
-                    }
-                    .frame(width: centerBadgeW, height: barH)
-                    .position(x: half, y: barH / 2)
-
-                    // LEFT BRACKET
-                    ZStack {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.001))
-                            .frame(width: 44, height: 44)
-                        BracketShape(side: .left)
-                            .fill(Color.white)
-                            .frame(width: bracketW, height: barH - 1)
-                    }
-                    .position(x: leftX, y: barH / 2)
-                    .gesture(
-                        DragGesture(minimumDistance: 0, coordinateSpace: .named("SliderTrack"))
-                            .onChanged { value in
-                                let dragX = value.location.x
-                                let distanceFromCenter = leftEdgeOfCenter - dragX
-                                let frac = distanceFromCenter / leftAvailableTravel
-                                let sec = Int(frac * CGFloat(maxSec))
-                                beforeSeconds = min(max((sec / step) * step, minSecBefore), maxSec)
-                            }
+        HStack(spacing: 8) {
+            Button {
+                snapTo(uiZoom: 0.5)
+            } label: {
+                Text(".5x")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(abs(currentUIZoom - 0.5) < 0.1 ? .varden : .white)
+                    .frame(width: 44, height: 38)
+                    .background(Color.black.opacity(0.45))
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule().stroke(abs(currentUIZoom - 0.5) < 0.1 ? Color.varden : Color.white.opacity(0.25), lineWidth: abs(currentUIZoom - 0.5) < 0.1 ? 1.8 : 0.8)
                     )
-
-                    // RIGHT BRACKET
-                    ZStack {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.001))
-                            .frame(width: 44, height: 44)
-                        BracketShape(side: .right)
-                            .fill(Color.white)
-                            .frame(width: bracketW, height: barH - 1)
-                    }
-                    .position(x: rightX, y: barH / 2)
-                    .gesture(
-                        DragGesture(minimumDistance: 0, coordinateSpace: .named("SliderTrack"))
-                            .onChanged { value in
-                                let dragX = value.location.x
-                                let distanceFromCenter = dragX - rightEdgeOfCenter
-                                let frac = distanceFromCenter / rightAvailableTravel
-                                let sec = Int(frac * CGFloat(maxSec))
-                                afterSeconds = min(max((sec / step) * step, minSecAfter), maxSec)
-                            }
-                    )
-
-                    // Dynamic Left Text
-                    Text("\(beforeSeconds)s")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.white.opacity(0.85))
-                        .position(x: max((leftX - bracketW) / 2, 18), y: barH / 2)
-
-                    // Dynamic Right Text
-                    Text("\(afterSeconds)s")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.white.opacity(0.85))
-                        .position(x: min(rightX + (W - rightX) / 2, W - 18), y: barH / 2)
-                }
-                .coordinateSpace(name: "SliderTrack")
             }
-            .frame(height: barH)
+            .buttonStyle(.plain)
 
-            HStack {
-                Text("← Before ClipIt")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.45))
-                Spacer()
-                Text("After ClipIt →")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.45))
+            Button {
+                snapTo(uiZoom: 1.0)
+            } label: {
+                Text("1.0x")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(abs(currentUIZoom - 1.0) < 0.1 ? .varden : .white)
+                    .frame(width: 44, height: 38)
+                    .background(Color.black.opacity(0.45))
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule().stroke(abs(currentUIZoom - 1.0) < 0.1 ? Color.varden : Color.white.opacity(0.25), lineWidth: abs(currentUIZoom - 1.0) < 0.1 ? 1.8 : 0.8)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func snapTo(uiZoom: CGFloat) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let targetHardware = uiZoom * 2.0
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+            cameraManager.setZoom(targetHardware)
+        }
+    }
+}
+
+// MARK: - Record Control Group (Stacked ClipIt & Record Buttons)
+
+private struct RecordControlGroup: View {
+    let isRecording: Bool
+    let onRecordTap: () -> Void
+    let onClipItTap: () -> Void
+    
+    let clipItOffset: CGSize
+
+    var body: some View {
+        ZStack(alignment: .center) {
+            Button(action: onClipItTap) {
+                ZStack {
+                    Circle()
+                        .fill(isRecording ? Color.crimsonBlaze : Color.white.opacity(0.2))
+                        .frame(width: 125, height: 125)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(isRecording ? 0.4 : 0.2), lineWidth: 2)
+                        )
+                        .shadow(color: isRecording ? Color.crimsonBlaze.opacity(0.6) : .clear, radius: 10, y: 4)
+
+                    Text("ClipIt")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundColor(isRecording ? .white : .white.opacity(0.5))
+                }
+            }
+            .offset(clipItOffset)
+            .disabled(!isRecording)
+            .buttonStyle(.plain)
+
+            RecordButton(isRecording: isRecording, action: onRecordTap)
+        }
+        .frame(width: 80, height: 80)
+    }
+}
+
+// MARK: - Interactive Zoom Control for Portrait
+
+private struct InteractiveZoomControl: View {
+    @ObservedObject var cameraManager: CameraManager
+
+    @State private var isDragging = false
+    @State private var dragStartY: CGFloat = 0
+    @State private var initialHardwareZoom: CGFloat = 2.0
+    @State private var lastHapticThreshold: Int = -1
+
+    private var currentUIZoom: CGFloat {
+        cameraManager.zoomFactor * 0.5
+    }
+
+    private var currentDisplayString: String {
+        String(format: "%.1f", currentUIZoom)
+    }
+
+    private var normalizedZoomProgress: CGFloat {
+        let minZ = cameraManager.minZoom
+        let maxZ = cameraManager.maxZoom
+        return (cameraManager.zoomFactor - minZ) / (maxZ - minZ)
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            if isDragging {
+                VStack(spacing: 8) {
+                    Text("\(currentDisplayString)x")
+                        .font(.system(size: 12, weight: .black, design: .monospaced))
+                        .foregroundColor(.varden)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.85))
+                        .clipShape(Capsule())
+
+                    GeometryReader { geo in
+                        let trackHeight = geo.size.height
+                        let thumbY = trackHeight * (1.0 - normalizedZoomProgress)
+
+                        ZStack(alignment: .top) {
+                            Capsule()
+                                .fill(Color.white.opacity(0.3))
+                                .frame(width: 6, height: trackHeight)
+
+                            Capsule()
+                                .fill(Color.varden)
+                                .frame(width: 6, height: trackHeight - thumbY)
+                                .offset(y: thumbY)
+
+                            Circle()
+                                .fill(Color.varden)
+                                .frame(width: 18, height: 18)
+                                .shadow(color: .black.opacity(0.4), radius: 3)
+                                .position(x: geo.size.width / 2, y: thumbY)
+                        }
+                    }
+                    .frame(width: 24, height: 120)
+                }
+                .padding(.bottom, 64)
+                .transition(.scale(scale: 0.85, anchor: .bottom).combined(with: .opacity))
+            }
+
+            HStack(spacing: 8) {
+                if currentUIZoom != 0.5 || isDragging {
+                    Button {
+                        snapTo(uiZoom: 0.5)
+                    } label: {
+                        Text(".5x")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 42, height: 36)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+
+                CircleButtonView(
+                    displayString: "\(currentDisplayString)x",
+                    isActive: abs(currentUIZoom - 1.0) > 0.05
+                )
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if !isDragging {
+                                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                                    isDragging = true
+                                }
+                                dragStartY = value.location.y
+                                initialHardwareZoom = cameraManager.zoomFactor
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            }
+
+                            let deltaY = dragStartY - value.location.y
+                            let zoomShiftUI = deltaY / 100.0
+                            let targetHardwareZoom = initialHardwareZoom + (zoomShiftUI * 2.0)
+                            let clampedHardware = targetHardwareZoom.clamped(to: cameraManager.minZoom...cameraManager.maxZoom)
+
+                            cameraManager.setZoom(clampedHardware)
+
+                            let hapticStep = Int((clampedHardware * 0.5) * 2)
+                            if hapticStep != lastHapticThreshold {
+                                lastHapticThreshold = hapticStep
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
+                        }
+                        .onEnded { value in
+                            let totalDragDistance = abs(dragStartY - value.location.y)
+
+                            if totalDragDistance < 6 {
+                                snapTo(uiZoom: 1.0)
+                            }
+
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                isDragging = false
+                            }
+                        }
+                )
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: currentUIZoom)
+    }
+
+    private func snapTo(uiZoom: CGFloat) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let targetHardware = uiZoom * 2.0
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+            cameraManager.setZoom(targetHardware)
+        }
+    }
+}
+
+private struct CircleButtonView: View {
+    let displayString: String
+    let isActive: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.black.opacity(0.45))
+                .background(.ultraThinMaterial)
+                .clipShape(Circle())
+                .frame(width: 54, height: 54)
+                .overlay(
+                    Circle()
+                        .stroke(isActive ? Color.varden : Color.white.opacity(0.25), lineWidth: isActive ? 1.8 : 0.8)
+                )
+
+            Text(displayString)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(isActive ? .varden : .white)
+        }
+    }
+}
+
+// MARK: - Preceding Time Control (ClipIt Save Time)
+
+private struct PrecedingTimeControl: View {
+    @Binding var seconds: Int
+
+    private let minSeconds: Double = 5
+    private let maxSeconds: Double = 60
+    private let step: Double = 5
+    private let baselineSeconds: Double = 15
+    private let quickOptions: [Int] = [5, 10, 15, 20, 30, 60]
+    private let trackHeight: CGFloat = 44
+
+    var body: some View {
+        VStack(spacing: 10) {
+            header
+            slider
+            quickSnapRow
+        }
+    }
+
+    private var header: some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 6) {
+                Text("ClipIt Highlight Length")
+                    .font(.system(size: 15, weight: .bold))
+            }
+            .foregroundColor(.white)
+        }
+    }
+
+    private var slider: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let frac = CGFloat((Double(seconds) - minSeconds) / (maxSeconds - minSeconds))
+            let baselineFrac = CGFloat((baselineSeconds - minSeconds) / (maxSeconds - minSeconds))
+            let fillWidth = w * (baselineFrac + frac * (1 - baselineFrac))
+            let thumbX = min(max(fillWidth, trackHeight / 2), w - 2)
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: trackHeight / 2, style: .continuous)
+                    .fill(Color.white.opacity(0.12))
+                    .frame(width: w, height: trackHeight)
+
+                RoundedRectangle(cornerRadius: trackHeight / 2, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.crimsonBlaze, Color.crimsonBlaze.opacity(0.65)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: fillWidth, height: trackHeight)
+
+                Text("\(seconds)s")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.leading, 14)
+
+                ZStack {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 30, height: 30)
+                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+
+                    HStack(spacing: 2.5) {
+                        Capsule().fill(Color.crimsonBlaze.opacity(0.6)).frame(width: 2, height: 14)
+                        Capsule().fill(Color.crimsonBlaze.opacity(0.6)).frame(width: 2, height: 14)
+                        Capsule().fill(Color.crimsonBlaze.opacity(0.6)).frame(width: 2, height: 14)
+                    }
+                }
+                .position(x: thumbX, y: trackHeight / 2)
+            }
+            .frame(width: w, height: trackHeight)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let x = min(max(value.location.x, 0), w)
+                        let targetFrac = Double(x / w)
+                        let f = max(0, (targetFrac - Double(baselineFrac)) / (1 - Double(baselineFrac)))
+                        let sec = minSeconds + f * (maxSeconds - minSeconds)
+                        let snapped = (sec / step).rounded() * step
+                        seconds = Int(min(max(snapped, minSeconds), maxSeconds))
+                    }
+            )
+        }
+        .frame(height: trackHeight)
+    }
+
+    private var quickSnapRow: some View {
+        HStack(spacing: 6) {
+            ForEach(quickOptions, id: \.self) { option in
+                let isSelected = seconds == option
+
+                Button {
+                    withAnimation(.snappy) { seconds = option }
+                } label: {
+                    Text("\(option)s")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(isSelected ? .white : .white.opacity(0.8))
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            Capsule().fill(isSelected ? Color.crimsonBlaze : Color.crimsonBlaze.opacity(0.25))
+                        )
+                }
+                .buttonStyle(.plain)
             }
         }
     }
 }
+
 // MARK: - RecordButton
 
 struct RecordButton: View {
@@ -1097,121 +1171,65 @@ struct RecordButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                // Outer ring
                 Circle()
                     .stroke(Color.white, lineWidth: 4)
                     .frame(width: 76, height: 76)
                 
-                // Inner record shape
                 if isRecording {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.red)
+                        .fill(Color.crimsonBlaze)
                         .frame(width: 32, height: 32)
                         .transition(.scale.combined(with: .opacity))
                 } else {
                     Circle()
-                        .fill(Color.red)
+                        .fill(Color.crimsonBlaze)
                         .frame(width: 62, height: 62)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
-            .contentShape(Circle()) // 👈 FIX: Makes the entire 76x76 circle area tappable, always!
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
     }
 }
 
-// MARK: - Bracket Shape
-
-private struct BracketShape: Shape {
-    enum Side {
-        case left
-        case right
-    }
-
-    let side: Side
-    private let thickness: CGFloat = 3
-    private let capLen: CGFloat = 10
-
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-
-        if side == .left {
-            p.addRect(CGRect(x: rect.minX, y: rect.minY, width: thickness, height: rect.height))
-            p.addRect(CGRect(x: rect.minX, y: rect.minY, width: capLen, height: thickness))
-            p.addRect(CGRect(x: rect.minX, y: rect.maxY - thickness, width: capLen, height: thickness))
-        } else {
-            p.addRect(CGRect(x: rect.maxX - thickness, y: rect.minY, width: thickness, height: rect.height))
-            p.addRect(CGRect(x: rect.maxX - capLen, y: rect.minY, width: capLen, height: thickness))
-            p.addRect(CGRect(x: rect.maxX - capLen, y: rect.maxY - thickness, width: capLen, height: thickness))
-        }
-        return p
-    }
-}
-
-// MARK: - FocusIndicatorView
+// MARK: - FocusIndicatorView (Apple Camera Style)
 
 private struct FocusIndicatorView: View {
-    let showBrightness: Bool
-    @Binding var exposureBias: Double
-    let onSliderChanged: () -> Void
-
-    @State private var scale: CGFloat = 1.35
-    @State private var localExposure: Double = 0.0
-    @State private var isDragging = false
-    @State private var dragStartExposure: Double = 0.0
-
-    private let boxSize: CGFloat = 68
-    private let trackHeight: CGFloat = 110
+    @State private var scale: CGFloat = 1.3
+    private let boxSize: CGFloat = 70
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            RoundedRectangle(cornerRadius: 3)
-                .stroke(Color.yellow, lineWidth: 1.5)
-                .frame(width: boxSize, height: boxSize)
-                .scaleEffect(scale)
-                .onAppear {
-                    withAnimation(.easeOut(duration: 0.2)) { scale = 1.0 }
-                    localExposure = exposureBias
-                }
-            
-            if showBrightness {
-                ZStack {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.001))
-                        .frame(width: 44, height: trackHeight + 40)
-                    
-                    Rectangle()
-                        .fill(Color.yellow.opacity(0.6))
-                        .frame(width: 1, height: trackHeight)
-                    
-                    Image(systemName: "sun.max.fill")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 16, height: 16)
-                        .foregroundColor(.yellow)
-                        .offset(y: -CGFloat(localExposure) * (trackHeight / 4.0))
-                }
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if !isDragging {
-                                isDragging = true
-                                dragStartExposure = localExposure
-                            }
-                            let dragAmount = -value.translation.height
-                            let dragFactor = 4.0 / trackHeight
-                            let newExposure = dragStartExposure + (dragAmount * dragFactor)
-                            localExposure = min(max(newExposure, -2.0), 2.0)
-                            exposureBias = localExposure
-                            onSliderChanged()
-                        }
-                        .onEnded { _ in
-                            isDragging = false
-                        }
-                )
-                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color.varden, lineWidth: 1.2)
+
+            Rectangle()
+                .fill(Color.varden)
+                .frame(width: 1.5, height: 7)
+                .frame(maxHeight: .infinity, alignment: .top)
+
+            Rectangle()
+                .fill(Color.varden)
+                .frame(width: 1.5, height: 7)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+
+            Rectangle()
+                .fill(Color.varden)
+                .frame(width: 7, height: 1.5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Rectangle()
+                .fill(Color.varden)
+                .frame(width: 7, height: 1.5)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .frame(width: boxSize, height: boxSize)
+        .scaleEffect(scale)
+        .onAppear {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.65)) {
+                scale = 1.0
             }
         }
     }
@@ -1271,7 +1289,6 @@ private struct CircleButton: View {
     }
 }
 
-// Helper functions to copy-paste inside the files using them:
 private func getBatteryColor(for level: Int) -> Color {
     switch level {
     case ...20:  return .red
@@ -1289,4 +1306,3 @@ private func getBatteryIcon(for level: Int) -> String {
     default:       return "battery.100percent"
     }
 }
-

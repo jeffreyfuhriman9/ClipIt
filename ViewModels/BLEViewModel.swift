@@ -122,11 +122,13 @@ final class BLEViewModel: NSObject, ObservableObject {
             return
         }
         
-        // 🔋 NEW: Intercept and process the custom battery data payload string ("BATT 87")
+        // 🔋 Intercept and process the battery payload (e.g. "BATT 87", "BATT87", "BATT 87%")
         if message.hasPrefix("BATT") {
-            let components = message.components(separatedBy: " ")
-            if components.count == 2, let parsedBattery = Int(components[1]) {
+            let digits = message.dropFirst("BATT".count).filter { $0.isNumber }
+            if let parsedBattery = Int(digits) {
                 self.remoteBatteryLevel = parsedBattery
+            } else {
+                print("BLE battery parse failed for message: \"\(message)\"")
             }
         }
     }
@@ -155,9 +157,9 @@ extension BLEViewModel: CBCentralManagerDelegate {
             default:
                 if !(self.connectedPeripheral != nil || self.bleState.isConnected) {
                     self.bleState = .disconnected
+                    self.remoteBatteryLevel = nil
                 }
                 self.discoveredDevices.removeAll()
-                self.remoteBatteryLevel = nil
             }
         }
     }
