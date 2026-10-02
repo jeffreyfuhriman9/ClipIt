@@ -12,11 +12,6 @@ struct CameraPreviewView: UIViewRepresentable {
         cameraManager.attachPreviewLayer(view.previewLayer)
         onLayerReady?(view.previewLayer)
         
-        // Offload blocking camera start operation to background thread
-        DispatchQueue.global(qos: .userInitiated).async {
-            cameraManager.startIfNeeded()
-        }
-        
         return view
     }
 
@@ -24,9 +19,6 @@ struct CameraPreviewView: UIViewRepresentable {
         // Only attach or start if session was disconnected to prevent redundant main-thread work
         if uiView.previewLayer.session == nil {
             cameraManager.attachPreviewLayer(uiView.previewLayer)
-            DispatchQueue.global(qos: .userInitiated).async {
-                cameraManager.startIfNeeded()
-            }
         }
     }
 

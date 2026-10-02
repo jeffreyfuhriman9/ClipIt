@@ -49,7 +49,10 @@ final class BLEViewModel: NSObject, ObservableObject {
     @Published var remoteBatteryLevel: Int? = nil
 
     let clipTrigger = PassthroughSubject<Void, Never>()
+    let startRecordTrigger = PassthroughSubject<Void, Never>()
+    let stopRecordTrigger = PassthroughSubject<Void, Never>()
     let toggleRecordTrigger = PassthroughSubject<Void, Never>()
+    let remoteCommandReadyTrigger = PassthroughSubject<Void, Never>()
 
     private var centralManager: CBCentralManager?
     private var connectedPeripheral: CBPeripheral?
@@ -57,6 +60,7 @@ final class BLEViewModel: NSObject, ObservableObject {
     private var rxCharacteristic: CBCharacteristic?
 
     private var hasAutoConnected = false
+    private var scanRequestedWhileInitializing = false
     private var incomingBuffer = ""
 
     override init() {
@@ -65,13 +69,18 @@ final class BLEViewModel: NSObject, ObservableObject {
 
     func startScanning() {
         if centralManager == nil {
+            scanRequestedWhileInitializing = true
             centralManager = CBCentralManager(delegate: self, queue: nil)
-            return  // centralManagerDidUpdateState will fire and call startScanning() again once powered on
+            return  // Continue the requested scan once Bluetooth reports its state.
         }
-        guard centralManager?.state == .poweredOn else { return }
+        guard centralManager?.state == .poweredOn else {
+            scanRequestedWhileInitializing = true
+            return
+        }
         guard connectedPeripheral == nil else { return }
         guard !bleState.isConnected else { return }
 
+        scanRequestedWhileInitializing = false
         discoveredDevices.removeAll()
         bleState = .scanning
         hasAutoConnected = false
@@ -83,6 +92,7 @@ final class BLEViewModel: NSObject, ObservableObject {
     }
 
     func stopScanning() {
+        scanRequestedWhileInitializing = false
         centralManager?.stopScan()
     }
 
@@ -99,6 +109,17 @@ final class BLEViewModel: NSObject, ObservableObject {
         centralManager?.cancelPeripheralConnection(peripheral)
     }
 
+    func sendRemoteCommand(_ command: String) {
+        guard let peripheral = connectedPeripheral,
+              let characteristic = rxCharacteristic else { return }
+
+        let data = Data((command + "\n").utf8)
+        let writeType: CBCharacteristicWriteType =
+            characteristic.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+
+        peripheral.writeValue(data, for: characteristic, type: writeType)
+    }
+
     // 🛠 UNIFIED PROCESSING ENGINE: Everything funnels cleanly through here safely on MainActor
     @MainActor
     private func handleIncomingMessage(_ text: String) {
@@ -108,7 +129,19 @@ final class BLEViewModel: NSObject, ObservableObject {
         lastMessage = message
         print("BLE received: \(message)")
 
-        if message == "TOGGLE_RECORD" {
+        if message == "START_RECORDING" {
+            startRecordTrigger.send()
+            return
+        }
+
+        if message == "STOP_RECORDING" {
+            stopRecordTrigger.send()
+            return
+        }
+
+        // Legacy XIAO firmware used a dedicated toggle-record button and
+        // reported a single TOGGLE_RECORD command instead of start/stop pairs.
+        if message == "TOGGLE_RECORD" || message == "TOGGLE_RECORDING" {
             toggleRecordTrigger.send()
             return
         }
@@ -145,7 +178,7 @@ extension BLEViewModel: CBCentralManagerDelegate {
                 }
 
                 self.bleState = .disconnected
-                if self.autoReconnect {
+                if self.autoReconnect || self.scanRequestedWhileInitializing {
                     self.startScanning()
                 }
 
@@ -263,6 +296,12 @@ extension BLEViewModel: CBPeripheralDelegate {
             } else if char.uuid == kRXCharUUID {
                 rxCharacteristic = char
             }
+        }
+
+        if txCharacteristic != nil && rxCharacteristic != nil {
+            remoteCommandReadyTrigger.send()
+            // Ask for the current level as soon as UART is ready.
+            sendRemoteCommand("GET_BATTERY")
         }
     }
 

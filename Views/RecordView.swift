@@ -15,6 +15,7 @@ struct RecordView: View {
     // Clip saved banner
     @State private var showClipSavedBanner = false
     @State private var clipSavedText = ""
+    @State private var clipSavedIsFavorite = false
     @State private var clipSavedHideTask: DispatchWorkItem?
     
     // Pinch-to-zoom
@@ -78,6 +79,7 @@ struct RecordView: View {
                 let isLandscape = geo.size.width > geo.size.height
                 let isLandscapeRight = orientation == .landscapeRight
                 let isLandscapeLeft = !isLandscapeRight // Default landscape mode to left
+                let isIPad = UIDevice.current.userInterfaceIdiom == .pad
                 
                 ZStack {
                     // Gesture Capture Layer
@@ -86,9 +88,12 @@ struct RecordView: View {
                         .gesture(
                             MagnificationGesture()
                                 .onChanged { value in
+                                    let zoomSensitivity: CGFloat = 1.6
                                     let dynamicDelta = value.magnitude
                                     let baseZoom = recordingVM.cameraManager.zoomFactor
-                                    let targetZoom = lastZoomFactor == 1.0 ? baseZoom * dynamicDelta : baseZoom + (value - lastZoomFactor)
+                                    let targetZoom = lastZoomFactor == 1.0
+                                        ? baseZoom * dynamicDelta
+                                        : baseZoom + ((value - lastZoomFactor) * zoomSensitivity)
                                     lastZoomFactor = value
                                     recordingVM.cameraManager.setZoom(targetZoom)
                                 }
@@ -105,7 +110,11 @@ struct RecordView: View {
                     
                     // 🎛️ Dynamic Orientation Layout Switcher
                     if isLandscape {
-                        landscapeOverlayView(isLandscapeLeft: isLandscapeLeft)
+                        landscapeOverlayView(
+                            isLandscapeLeft: isLandscapeLeft,
+                            isIPad: isIPad,
+                            layoutHeight: geo.size.height
+                        )
                             .zIndex(1)
                     } else {
                         portraitOverlayView
@@ -116,11 +125,23 @@ struct RecordView: View {
                     VStack {
                         Spacer()
                         if showClipSavedBanner {
-                            Text(clipSavedText)
-                                .font(.system(size: 16, weight: .heavy))
-                                .foregroundColor(.crimsonBlaze)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 20)
+                            HStack(spacing: 12) {
+                                Text(clipSavedText)
+                                    .font(.system(size: 20, weight: .heavy))
+                                    .foregroundColor(.crimsonBlaze)
+                                Button {
+                                    recordingVM.favoriteLatestTriggeredClip()
+                                    clipSavedIsFavorite = true
+                                } label: {
+                                    Image(systemName: clipSavedIsFavorite ? "heart.fill" : "heart")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(.crimsonBlaze)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(clipSavedIsFavorite ? "Clip favorited" : "Favorite clip")
+                            }
+                                .padding(.horizontal, 22)
+                                .padding(.vertical, 24)
                                 .background(.ultraThinMaterial)
                                 .clipShape(Capsule())
                                 .shadow(color: Color.black.opacity(0.25), radius: 10, y: 4)
@@ -165,8 +186,17 @@ struct RecordView: View {
         .onReceive(bleVM.clipTrigger) { _ in
             triggerClipIt()
         }
+        .onReceive(bleVM.startRecordTrigger) { _ in
+            startRecording()
+        }
+        .onReceive(bleVM.stopRecordTrigger) { _ in
+            stopRecording()
+        }
         .onReceive(bleVM.toggleRecordTrigger) { _ in
             handleRecordTap()
+        }
+        .onReceive(bleVM.remoteCommandReadyTrigger) { _ in
+            sendCurrentRecordingStateToRemote()
         }
         .onAppear {
             callMonitor.setupViewModel(recordingVM)
@@ -180,7 +210,10 @@ struct RecordView: View {
             }
         }
         .onDisappear {
-            bleVM.stopScanning()
+            // The Device tab owns the active scan while it is visible.
+            if selectedTab != 2 {
+                bleVM.stopScanning()
+            }
         }
         .onChange(of: recordingVM.showCallEndedOverlay) { _, shouldShow in
             if shouldShow {
@@ -212,6 +245,8 @@ struct RecordView: View {
             }
         }
         .onChange(of: recordingVM.recordingState) { _, newState in
+            sendCurrentRecordingStateToRemote()
+
             if newState == .active {
                 if dimScreenDuringRecording {
                     originalBrightness = UIScreen.main.brightness
@@ -284,15 +319,18 @@ struct RecordView: View {
     // MARK: - Landscape Layout View
 
     @ViewBuilder
-    private func landscapeOverlayView(isLandscapeLeft: Bool) -> some View {
+    private func landscapeOverlayView(
+        isLandscapeLeft: Bool,
+        isIPad: Bool,
+        layoutHeight: CGFloat
+    ) -> some View {
         ZStack {
             // 1. TOP BAR CONTROLS
             VStack {
                 ZStack {
                     HStack(alignment: .top) {
                         if isLandscapeLeft {
-                            VStack(alignment: .leading, spacing: 6) {
-                                timingBadge
+                        VStack(alignment: .leading, spacing: 6) {
                                 connectedBadge
                             }
                             
@@ -305,7 +343,6 @@ struct RecordView: View {
                             Spacer()
                             
                             VStack(alignment: .trailing, spacing: 6) {
-                                timingBadge
                                 connectedBadge
                             }
                         }
@@ -340,22 +377,31 @@ struct RecordView: View {
                 HStack {
                     if isLandscapeLeft {
                         Spacer()
-                        CircleButton(systemImage: "gearshape.fill", size: 50, fill: Color.black.opacity(0.45)) {
+                        Button {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 showCameraControls.toggle()
                             }
+                        } label: {
+                            timingBadge
                         }
+                        .buttonStyle(.plain)
                     } else {
-                        CircleButton(systemImage: "gearshape.fill", size: 50, fill: Color.black.opacity(0.45)) {
+                        Button {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 showCameraControls.toggle()
                             }
+                        } label: {
+                            timingBadge
                         }
+                        .buttonStyle(.plain)
                         Spacer()
                     }
                 }
-                .padding(.horizontal, 36)
-                .padding(.top, 280)
+                .padding(.horizontal, isIPad ? 45 : 36)
+                // Phone has a compact, side-mounted control column. On iPad,
+                // place the timing button at roughly 70% of the screen height:
+                // below the record button and above the custom bottom tab bar.
+                .padding(.top, isIPad ? layoutHeight * 0.70 : 280)
 
                 Spacer()
             }
@@ -510,7 +556,6 @@ struct RecordView: View {
                 HStack(alignment: .top) {
                     if !isLandscape {
                         VStack(alignment: .leading, spacing: 6) {
-                            timingBadge
                             connectedBadge
                         }
                     }
@@ -565,26 +610,36 @@ struct RecordView: View {
     }
     
     private var timingBadge: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "gobackward")
-                .font(.system(size: 12, weight: .semibold))
-            Text("\(recordingVM.bufferLengthSeconds)s")
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
+        ZStack {
+            HStack(spacing: 5) {
+                Image(systemName: "gobackward")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("\(recordingVM.bufferLengthSeconds)s")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+            }
+            .foregroundColor(.white)
         }
-        .foregroundColor(.white)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.crimsonBlaze.opacity(0.35))
-        .clipShape(Capsule())
+        .frame(width: 54, height: 54)
+        .background(Color.crimsonBlaze.opacity(0.75), in: Circle())
+        .overlay(
+            Circle()
+                .stroke(Color.white.opacity(0.25), lineWidth: 0.8)
+        )
     }
 
     @ViewBuilder
     private var connectedBadge: some View {
         if bleVM.bleState.isConnected {
-            HStack(spacing: 6) {
-                Circle().fill(Color.green).frame(width: 7, height: 7)
-                Text("Connected")
+            HStack(alignment: .center, spacing: 6) {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 7, height: 7)
+
+                Text("ClipIt Button\nConnected")
                     .font(.system(size: 13, weight: .bold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundColor(.white)
             .padding(.horizontal, 12)
@@ -598,9 +653,14 @@ struct RecordView: View {
     private var recordingTimerBadge: some View {
         if recordingVM.recordingState == .active {
             HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.crimsonBlaze)
-                    .frame(width: 8, height: 8)
+                TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
+                    let halfSecond = Int(timeline.date.timeIntervalSinceReferenceDate / 0.5)
+                    Circle()
+                        .fill(Color.crimsonBlaze)
+                        .frame(width: 8, height: 8)
+                        .opacity(halfSecond.isMultiple(of: 2) ? 1 : 0)
+                }
+                .frame(width: 8, height: 8)
                 Text(recordingVM.elapsedLabel)
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
                     .foregroundColor(.white)
@@ -663,21 +723,6 @@ struct RecordView: View {
         .background(.ultraThinMaterial)
         .background(Color.black.opacity(0.45))
         .clipShape(RoundedRectangle(cornerRadius: 18))
-        .overlay(alignment: .topTrailing) {
-            Button {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    showCameraControls = false
-                }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white.opacity(0.75))
-                    .frame(width: 22, height: 22)
-                    .background(Color.white.opacity(0.18))
-                    .clipShape(Circle())
-            }
-            .padding(8)
-        }
         .padding(.horizontal, 16)
         .padding(.bottom, isLandscape ? 0 : 8)
     }
@@ -688,17 +733,20 @@ struct RecordView: View {
     private var bottomOverlay: some View {
         VStack(spacing: 12) {
             HStack(alignment: .center) {
-                CircleButton(systemImage: "gearshape.fill", size: 50, fill: Color.black.opacity(0.45)) {
+                Button {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         showCameraControls.toggle()
                     }
+                } label: {
+                    timingBadge
                 }
-                .padding(.leading, 30)
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
 
                 Spacer()
                 InteractiveZoomControl(cameraManager: recordingVM.cameraManager)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 16)
 
             RecordControlGroup(
                 isRecording: recordingVM.recordingState == .active,
@@ -737,22 +785,43 @@ struct RecordView: View {
 
     private func handleRecordTap() {
         if recordingVM.recordingState == .active {
-            recordingVM.endSession(navigateToClips: false)
-            multipeerManager.sendCommand(.stopRecording)
-            
-            if multipeerManager.isHost && !multipeerManager.connectedPeers.isEmpty {
-                showImportPrompt = true
-            }
+            stopRecording()
         } else {
-            transferClipsOnCompletion = false
-            recordingVM.requestStartSession(multipeerManager: multipeerManager)
-            multipeerManager.sendCommand(.startRecording)
+            startRecording()
         }
+    }
+
+    private func startRecording() {
+        guard recordingVM.recordingState != .active else { return }
+
+        transferClipsOnCompletion = false
+        recordingVM.requestStartSession(multipeerManager: multipeerManager)
+        multipeerManager.sendCommand(.startRecording)
+    }
+
+    private func stopRecording() {
+        guard recordingVM.recordingState == .active else { return }
+
+        recordingVM.endSession(navigateToClips: false)
+        multipeerManager.sendCommand(.stopRecording)
+
+        if multipeerManager.isHost && !multipeerManager.connectedPeers.isEmpty {
+            showImportPrompt = true
+        }
+    }
+
+    private func sendCurrentRecordingStateToRemote() {
+        let command = recordingVM.recordingState == .active
+            ? "RECORDING_STATE 1"
+            : "RECORDING_STATE 0"
+
+        bleVM.sendRemoteCommand(command)
     }
     
     private func showClipSavedConfirmation() {
         clipSavedHideTask?.cancel()
-        clipSavedText = "Clip saved at \(recordingVM.elapsedLabel)!"
+        clipSavedText = "Clip #\(recordingVM.clipCount) saved!"
+        clipSavedIsFavorite = recordingVM.latestTriggeredClip?.isFavorite ?? false
         withAnimation(.easeInOut(duration: 0.2)) { showClipSavedBanner = true }
         
         let task = DispatchWorkItem { [weak recordingVM] in
@@ -760,7 +829,7 @@ struct RecordView: View {
             withAnimation(.easeOut(duration: 0.5)) { self.showClipSavedBanner = false }
         }
         clipSavedHideTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: task)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: task)
     }
     
     // MARK: - Post-Game Network Pipeline
@@ -817,12 +886,12 @@ private struct StaticZoomControl: View {
             } label: {
                 Text(".5x")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(abs(currentUIZoom - 0.5) < 0.1 ? .varden : .white)
+                    .foregroundColor(.white)
                     .frame(width: 44, height: 38)
                     .background(Color.black.opacity(0.45))
                     .clipShape(Capsule())
                     .overlay(
-                        Capsule().stroke(abs(currentUIZoom - 0.5) < 0.1 ? Color.varden : Color.white.opacity(0.25), lineWidth: abs(currentUIZoom - 0.5) < 0.1 ? 1.8 : 0.8)
+                        Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.8)
                     )
             }
             .buttonStyle(.plain)
@@ -830,18 +899,28 @@ private struct StaticZoomControl: View {
             Button {
                 snapTo(uiZoom: 1.0)
             } label: {
-                Text("1.0x")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(abs(currentUIZoom - 1.0) < 0.1 ? .varden : .white)
-                    .frame(width: 44, height: 38)
-                    .background(Color.black.opacity(0.45))
-                    .clipShape(Capsule())
-                    .overlay(
-                        Capsule().stroke(abs(currentUIZoom - 1.0) < 0.1 ? Color.varden : Color.white.opacity(0.25), lineWidth: abs(currentUIZoom - 1.0) < 0.1 ? 1.8 : 0.8)
-                    )
+                ZStack {
+                    Circle()
+                        .fill(Color.black.opacity(0.45))
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                        .frame(width: 54, height: 54)
+                        .overlay(
+                            Circle()
+                                .stroke(isZoomed ? Color.gochujangRed : Color.white.opacity(0.25), lineWidth: isZoomed ? 1.8 : 0.8)
+                        )
+
+                    Text(isZoomed ? String(format: "%.1fx", currentUIZoom) : "1.0x")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundColor(isZoomed ? Color.gochujangRed : .white)
+                }
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private var isZoomed: Bool {
+        abs(currentUIZoom - 1.0) > 0.05
     }
 
     private func snapTo(uiZoom: CGFloat) {
@@ -1245,7 +1324,6 @@ private struct CameraPermissionGate: View {
         Group {
             if cameraManager.permissionGranted && cameraManager.isRunning {
                 CameraPreviewView(cameraManager: cameraManager, onLayerReady: onLayerReady)
-                    .id(cameraManager.isRunning)
             } else if cameraManager.permissionGranted {
                 Color.black
             } else {

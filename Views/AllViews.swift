@@ -197,104 +197,288 @@ private struct ClipRow: View {
 
 struct BLEDeviceView: View {
     @EnvironmentObject var bleVM: BLEViewModel
-    
+
+    private var isConnected: Bool { bleVM.bleState.isConnected }
+    private var isConnecting: Bool {
+        if case .connecting = bleVM.bleState { return true }
+        return false
+    }
+
+    private var statusTitle: String {
+        switch bleVM.bleState {
+        case .connected: return "Connected and ready"
+        case .connecting: return "Connecting to your button"
+        case .scanning: return "Looking for your button"
+        case .poweredOff: return "Bluetooth is off"
+        case .disconnected: return "Button not connected"
+        }
+    }
+
+    private var statusDetail: String {
+        switch bleVM.bleState {
+        case .connected:
+            return "Press your ClipIt Button while recording to save a highlight."
+        case .connecting:
+            return "Keep your button nearby while the connection finishes."
+        case .scanning:
+            return "Turn on your button and keep it close to this device."
+        case .poweredOff:
+            return ""
+        case .disconnected:
+            return "Turn on your button, then scan to connect."
+        }
+    }
+
+    private var statusLabel: String {
+        switch bleVM.bleState {
+        case .connected: return "Connected"
+        case .connecting: return "Connecting"
+        case .scanning: return "Searching"
+        case .poweredOff: return "Bluetooth off"
+        case .disconnected: return "Not connected"
+        }
+    }
+
+    private var statusColor: Color {
+        switch bleVM.bleState {
+        case .connected: return .green
+        case .connecting, .scanning: return .blueMarble
+        case .poweredOff, .disconnected: return .secondary
+        }
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle()
-                                .fill(bleVM.bleState.isConnected ? Color.blue.opacity(0.15) : Color.gray.opacity(0.15))
-                                .frame(width: 48, height: 48)
-                            Image(systemName: "antenna.radiowaves.left.and.right")
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(bleVM.bleState.isConnected ? .blue : .gray)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("ClipIt Button").font(.system(size: 15, weight: .semibold))
-                            Text(bleVM.bleState.label).font(.caption).foregroundColor(.secondary)
-                        }
-                        
-                        if bleVM.bleState.isConnected {
-                            Spacer()
-                            
-                            if let batteryLevel = bleVM.remoteBatteryLevel {
-                                HStack(spacing: 4) {
-                                    Text("\(batteryLevel)%")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.secondary)
-                                    
-                                    Image(systemName: getBatteryIcon(for: batteryLevel))
-                                        .font(.system(size: 15))
-                                        .foregroundColor(getBatteryColor(for: batteryLevel))
-                                }
-                            } else {
-                                Text("Connected")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.green)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.green.opacity(0.12))
-                                    .clipShape(Capsule())
-                            }
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    statusCard
+
+                    if !isConnected {
+                        connectionSection
                     }
-                    .padding(.vertical, 6)
+
+                    settingsCard
                 }
-                
-                Section {
-                    Button(action: { bleVM.startScanning() }) {
-                        HStack {
-                            Spacer()
-                            Text("Scan Nearby Devices")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(.crimsonBlaze)
-                            Spacer()
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    .contentShape(Rectangle())
-                }
-                
-                if !bleVM.discoveredDevices.isEmpty {
-                    Section("Nearby devices") {
-                        ForEach(bleVM.discoveredDevices) { device in
-                            HStack {
-                                Image(systemName: "memorychip").foregroundColor(.blue).frame(width: 32)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(device.name).font(.system(size: 14, weight: .semibold))
-                                    Text("\(device.rssi) dBm").font(.caption).foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                Button("Connect") { bleVM.connect(to: device) }
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                    }
-                }
-                
-                Section("Connection settings") {
-                    Toggle("Auto-reconnect", isOn: $bleVM.autoReconnect)
-                }
+                .frame(maxWidth: 560)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 24)
+                .frame(maxWidth: .infinity)
             }
-            .navigationTitle("ClipIt Button")
+            .background(Color(UIColor.systemGroupedBackground))
+            .navigationTitle("Device")
             .navigationBarTitleDisplayMode(.large)
             .toolbarTitleDisplayMode(.large)
         }
+        .onAppear {
+            if !isConnected && !isConnecting {
+                bleVM.startScanning()
+            }
+        }
     }
-    
-    private func getBatteryColor(for level: Int) -> Color {
+
+    private var statusCard: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top, spacing: 16) {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(Color.blueMarble)
+                    .frame(width: 64, height: 64)
+                    .background(Color.blueMarble.opacity(0.12), in: RoundedRectangle(cornerRadius: 18))
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 8, height: 8)
+                    Text(statusLabel)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(statusColor)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .background(statusColor.opacity(0.11), in: Capsule())
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text("ClipIt Button")
+                    .font(.system(size: 25, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.cosmosBlue)
+
+                Text(statusTitle)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                Text(statusDetail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if isConnected {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: 1)
+
+                HStack(spacing: 12) {
+                    if let batteryLevel = bleVM.remoteBatteryLevel {
+                        Image(systemName: batteryIcon(for: batteryLevel))
+                            .font(.system(size: 22))
+                            .foregroundStyle(batteryColor(for: batteryLevel))
+                            .frame(width: 32)
+                    } else {
+                        ProgressView()
+                            .tint(.blueMarble)
+                            .frame(width: 32)
+                    }
+
+                    Text("Button battery")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Text(bleVM.remoteBatteryLevel.map { "\($0)%" } ?? "Checking…")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.cosmosBlue)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24)
+                .strokeBorder(Color.blueMarble.opacity(0.12), lineWidth: 1)
+        }
+    }
+
+    private var connectionSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if case .poweredOff = bleVM.bleState {
+                Label("Turn on Bluetooth to find your ClipIt Button.", systemImage: "bluetooth.slash")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
+                    .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+            } else {
+                if case .connecting = bleVM.bleState {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .tint(.crimsonBlaze)
+                        Text("Connecting…")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color.crimsonBlaze.opacity(0.12), in: RoundedRectangle(cornerRadius: 15))
+                } else {
+                    Button {
+                        bleVM.startScanning()
+                    } label: {
+                        Label("Scan for ClipIt Button", systemImage: "antenna.radiowaves.left.and.right")
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white)
+                    .background(Color.crimsonBlaze, in: RoundedRectangle(cornerRadius: 15))
+                }
+
+                if !isConnecting && !bleVM.discoveredDevices.isEmpty {
+                    nearbyDevicesCard
+                } else if !isConnecting {
+                    Text("Keep your button on and nearby. It will appear here when found.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                }
+            }
+        }
+    }
+
+    private var nearbyDevicesCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Nearby buttons")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color.cosmosBlue)
+                .padding(.horizontal, 18)
+                .padding(.top, 18)
+                .padding(.bottom, 8)
+
+            ForEach(bleVM.discoveredDevices) { device in
+                Button {
+                    bleVM.connect(to: device)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "wave.3.right")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(Color.blueMarble)
+                            .frame(width: 40, height: 40)
+                            .background(Color.blueMarble.opacity(0.11), in: RoundedRectangle(cornerRadius: 12))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(device.name)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.primary)
+                            Text(signalDescription(for: device.rssi))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color.crimsonBlaze)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Connect to \(device.name)")
+            }
+        }
+        .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var settingsCard: some View {
+        Toggle(isOn: $bleVM.autoReconnect) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Auto-reconnect")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text("Reconnect automatically when your button is nearby.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .tint(.crimsonBlaze)
+        .padding(18)
+        .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func signalDescription(for rssi: Int) -> String {
+        if rssi >= -65 { return "Strong signal" }
+        if rssi >= -80 { return "Good signal" }
+        return "Weak signal"
+    }
+
+    private func batteryColor(for level: Int) -> Color {
         switch level {
         case ...20:  return .red
         case 21...50: return .orange
         default:      return .green
         }
     }
-    
-    private func getBatteryIcon(for level: Int) -> String {
+
+    private func batteryIcon(for level: Int) -> String {
         switch level {
         case ...10:   return "battery.0percent"
         case 11...35:  return "battery.25percent"
@@ -430,15 +614,24 @@ private struct TimelineBar: View {
 struct SettingsView: View {
     @EnvironmentObject var recordingVM: RecordingViewModel
     @AppStorage("dimScreenDuringRecording") private var dimScreenDuringRecording = false
+    @AppStorage("originalVideoRetentionDays") private var originalVideoRetentionDays = 0
+    @State private var showOriginalVideoInfo = false
     
     var body: some View {
         NavigationStack {
             List {
                 Section("Recording") {
                     SettingsRow(icon: "timer", color: .crimsonBlaze, label: "ClipIt Highlight Length") {
-                        Stepper("\(recordingVM.bufferLengthSeconds)s",
-                                value: $recordingVM.bufferLengthSeconds, in: 5...60, step: 5)
-                        .font(.system(size: 14))
+                        HStack(spacing: 6) {
+                            Text("\(recordingVM.bufferLengthSeconds)s")
+                                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.secondary)
+
+                            Stepper("",
+                                    value: $recordingVM.bufferLengthSeconds, in: 5...60, step: 5)
+                                .labelsHidden()
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
                     }
                     
                     SettingsRow(icon: "video.fill", color: .green, label: "Video Quality") {
@@ -463,7 +656,7 @@ struct SettingsView: View {
                 
                 Section("Bluetooth") {
                     NavigationLink(destination: BLEDeviceView()) {
-                        SettingsRow(icon: "antenna.radiowaves.left.and.right", color: .gochujangRed, label: "ClipIt Button") {
+                        SettingsRow(icon: "antenna.radiowaves.left.and.right", color: .blueMarble, label: "ClipIt Button") {
                             Text("Configure").foregroundColor(.secondary).font(.system(size: 14))
                         }
                     }
@@ -475,6 +668,40 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                             .font(.system(size: 14))
                     }
+
+                    SettingsRow(icon: "trash.circle", color: .crimsonBlaze, label: "Delete Original\nVideos") {
+                        HStack(spacing: 8) {
+                            Picker("Original video retention", selection: $originalVideoRetentionDays) {
+                                Text("Never").tag(0)
+                                Text("After 1 day").tag(1)
+                                Text("After 3 days").tag(3)
+                                Text("After 7 days").tag(7)
+                                Text("After 14 days").tag(14)
+                                Text("After 30 days").tag(30)
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .fixedSize(horizontal: true, vertical: false)
+
+                            Button {
+                                showOriginalVideoInfo = true
+                            } label: {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 19))
+                                    .foregroundColor(.crimsonBlaze)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("About original video deletion")
+                        }
+                    }
+                }
+                .onChange(of: originalVideoRetentionDays) { _, days in
+                    recordingVM.applyOriginalVideoRetention(days: days)
+                }
+                .alert("Original Video Auto-Delete", isPresented: $showOriginalVideoInfo) {
+                    Button("OK", role: .cancel) { }
+                } message: {
+                    Text("Original Videos allow you to edit clips, but take up the most storage space. Deleting them automatically saves device space; your other saved clips will stay in your gallery. Choose “Never” to keep them.")
                 }
                 
                 Section("Account") {
@@ -492,12 +719,6 @@ struct SettingsView: View {
                             EmptyView()
                         }
                     }
-                }
-                
-                Section {
-                    Text("2026 ClipIt LLC • Version 1.3")
-                        .font(.footnote)
-                        .foregroundColor(.gray)
                 }
             }
             .navigationTitle("Settings")
@@ -522,7 +743,12 @@ private struct SettingsRow<Trailing: View>: View {
                 .frame(width: 28, height: 28)
                 .background(color)
                 .clipShape(RoundedRectangle(cornerRadius: 7))
-            Text(label).font(.system(size: 15))
+            Text(label)
+                .font(.system(size: 15))
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
             Spacer()
             trailing()
         }

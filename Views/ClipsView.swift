@@ -11,6 +11,7 @@ import AVFoundation
 enum ClipFilter: String, CaseIterable, Identifiable {
     case all = "All"
     case highlights = "Highlights"
+    case favorites = "Favorites"
     case reels = "Reels"
     case fullRecordings = "Original Video"
     
@@ -22,6 +23,7 @@ enum ClipFilter: String, CaseIterable, Identifiable {
         case .highlights: return "flame.fill"
         case .reels: return "movieclapper.fill"
         case .fullRecordings: return "play.circle.fill"
+        case .favorites: return "heart.fill"
         }
     }
     
@@ -35,6 +37,8 @@ enum ClipFilter: String, CaseIterable, Identifiable {
             return Color.blueMarble // reels are assembled from highlights, same red family
         case .fullRecordings:
             return Color.cosmosBlue // raw/original footage, "video quality" tone
+        case .favorites:
+            return Color.crimsonBlaze
         }
     }
 }
@@ -58,6 +62,17 @@ enum ClipCategoryType {
     }
 }
 
+/// Kept by the gallery rather than a lazy thumbnail cell. A grid cell may be
+/// rebuilt during rotation, but this presentation remains alive so the player
+/// does not disappear when portrait switches to landscape.
+private struct ClipPlayerPresentation: Identifiable {
+    let id = UUID()
+    let clips: [Clip]
+    let initialClipID: UUID
+    let fullVideoURL: URL?
+    let sessionDuration: TimeInterval
+}
+
 // MARK: - Main Clips View
 
 struct ClipsView: View {
@@ -74,12 +89,15 @@ struct ClipsView: View {
     @State private var showDeleteConfirmation = false
     
     @State private var isReelSelectionMode = false
-    @State private var selectedReelClipIDs = Set<UUID>()
+    // An array deliberately preserves the order the user taps highlights.
+    // That order becomes the first-to-last order in the generated reel.
+    @State private var selectedReelClipIDs: [UUID] = []
     
     @State private var selectedFilter: ClipFilter = .all
     
     @State private var shareContainer: ShareContainer?
     @State private var showCreateReelSheet = false
+    @State private var playerPresentation: ClipPlayerPresentation?
     
     @State private var isLandscapeSession = false
         
@@ -99,19 +117,26 @@ struct ClipsView: View {
             }
         }
     
+    private var visibleSessions: [Session] {
+        guard selectedFilter == .favorites else { return recordingVM.sessions }
+        return recordingVM.sessions.filter { session in
+            session.clips.contains { $0.isFavorite }
+        }
+    }
+
     var body: some View {
         ZStack {
             NavigationStack {
                 ScrollView {
                     LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                         Section(header: stickyTopHeader) {
-                            if recordingVM.sessions.isEmpty {
+                            if visibleSessions.isEmpty {
                                 emptyState
                             } else if selectedFilter == .reels {
                                 flattenedReelsGrid
                                     .padding(.top, 8)
                             } else {
-                                ForEach(Array(recordingVM.sessions.enumerated()), id: \.element.id) { index, session in
+                                ForEach(Array(visibleSessions.enumerated()), id: \.element.id) { index, session in
                                     SessionCardView(
                                         session: session,
                                         selectedFilter: selectedFilter,
@@ -122,12 +147,13 @@ struct ClipsView: View {
                                         isSelectionMode: $isSelectionMode,
                                         selectedClipIDs: $selectedClipIDs,
                                         isReelSelectionMode: $isReelSelectionMode,
-                                        selectedReelClipIDs: $selectedReelClipIDs
+                                        selectedReelClipIDs: $selectedReelClipIDs,
+                                        onOpenPlayer: { playerPresentation = $0 }
                                     )
                                     .padding(.top, 16)
                                     .padding(.bottom, 20)
                                     
-                                    if selectedFilter != .reels && index < recordingVM.sessions.count - 1 {
+                                    if selectedFilter != .reels && index < visibleSessions.count - 1 {
                                         Rectangle()
                                             .fill(Color.cosmosBlue)
                                             .frame(height: 5)
@@ -138,7 +164,7 @@ struct ClipsView: View {
                     }
                     .background(Color.white)
                 }
-                .navigationTitle("ClipIt Gallery")
+                .navigationTitle("ClipIt Library")
                 .navigationBarTitleDisplayMode(.large)
                 .toolbarTitleDisplayMode(.large)
                 .onChange(of: recordingVM.pendingHighlightToOpen) { _, newValue in
@@ -161,6 +187,39 @@ struct ClipsView: View {
                             onRename: { c, n in var u = c; u.customName = n; recordingVM.updateClip(u) }
                         )
                     }
+                }
+                .fullScreenCover(item: $playerPresentation) { presentation in
+                    ClipPagerView(
+                        clips: presentation.clips,
+                        initialClipID: presentation.initialClipID,
+                        fullVideoURL: presentation.fullVideoURL,
+                        sessionDuration: presentation.sessionDuration,
+                        onDelete: { clip in
+                            if clip.highlightIndex == nil {
+                                recordingVM.deleteFullRecording(sessionID: clip.sessionID)
+                            } else {
+                                recordingVM.deleteClip(sessionID: clip.sessionID, clipID: clip.id)
+                            }
+                        },
+                        onTrimSaved: { updatedClip in
+                            recordingVM.updateClip(updatedClip)
+                            // A Save-as-New trim creates a clip that was not
+                            // in this pager's original list. Return to the
+                            // gallery only for that intentional navigation.
+                            if !presentation.clips.contains(where: { $0.id == updatedClip.id }) {
+                                playerPresentation = nil
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    recordingVM.pendingHighlightToOpen = updatedClip
+                                }
+                            }
+                        },
+                        onRename: { clip, name in
+                            var updatedClip = clip
+                            updatedClip.customName = name
+                            recordingVM.updateClip(updatedClip)
+                        }
+                    )
+                    .environmentObject(multipeerManager)
                 }
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -316,7 +375,7 @@ struct ClipsView: View {
             }
             
             // 🎯 Shows the banner on Highlights, Reels, and Original Video tabs
-            if selectedFilter != .all && !recordingVM.sessions.isEmpty && !isSelectionMode {
+            if selectedFilter != .all && selectedFilter != .favorites && !recordingVM.sessions.isEmpty && !isSelectionMode {
                 createReelQuickBanner
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
@@ -417,14 +476,18 @@ struct ClipsView: View {
                     category: .reel,
                     allClips: allReels.map { $0.clip },
                     fullVideoURL: item.fullVideoURL,
+                    originalVideoDeletionDate: nil,
                     sessionDuration: item.duration,
                     isSelectionMode: isSelectionMode,
                     isSelected: selectedClipIDs.contains(item.clip.id),
                     isReelSelectionMode: isReelSelectionMode,
                     isReelSelected: selectedReelClipIDs.contains(item.clip.id),
+                    reelSelectionNumber: selectedReelClipIDs.firstIndex(of: item.clip.id).map { $0 + 1 },
+                    isLandscape: isLandscapeSession,
                     onSelectToggle: { toggleSelection(item.clip.id) },
                     onReelSelectToggle: { toggleReelSelection(item.clip.id) },
-                    onDelete: { recordingVM.deleteClip(sessionID: item.sessionID, clipID: item.clip.id) }
+                    onDelete: { recordingVM.deleteClip(sessionID: item.sessionID, clipID: item.clip.id) },
+                    onOpenPlayer: { playerPresentation = $0 }
                 )
             }
         }
@@ -502,8 +565,11 @@ struct ClipsView: View {
     }
     
     private func toggleReelSelection(_ clipID: UUID) {
-        if selectedReelClipIDs.contains(clipID) { selectedReelClipIDs.remove(clipID) }
-        else { selectedReelClipIDs.insert(clipID) }
+        if let index = selectedReelClipIDs.firstIndex(of: clipID) {
+            selectedReelClipIDs.remove(at: index)
+        } else {
+            selectedReelClipIDs.append(clipID)
+        }
     }
     
     private func deleteSelectedClips() {
@@ -527,11 +593,12 @@ struct ClipsView: View {
     }
     
     private func getSelectedReelClips() -> [Clip] {
-        var clips: [Clip] = []
-        for session in recordingVM.sessions {
-            for clip in session.clips where selectedReelClipIDs.contains(clip.id) { clips.append(clip) }
-        }
-        return clips
+        let clipsByID = Dictionary(
+            uniqueKeysWithValues: recordingVM.sessions
+                .flatMap(\.clips)
+                .map { ($0.id, $0) }
+        )
+        return selectedReelClipIDs.compactMap { clipsByID[$0] }
     }
     
     private func checkReelsOrientation() {
@@ -574,7 +641,8 @@ private struct SessionCardView: View {
     @Binding var selectedClipIDs: Set<UUID>
     
     @Binding var isReelSelectionMode: Bool
-    @Binding var selectedReelClipIDs: Set<UUID>
+    @Binding var selectedReelClipIDs: [UUID]
+    let onOpenPlayer: (ClipPlayerPresentation) -> Void
     
     private var primaryClips: [Clip] {
         var ordered: [Clip] = []
@@ -611,6 +679,13 @@ private struct SessionCardView: View {
         
         if (selectedFilter == .all || selectedFilter == .fullRecordings), let master = fullRecordingClip {
             list.append((master, .fullRecording))
+        }
+
+        if selectedFilter == .favorites {
+            list = primaryClips.filter { $0.isFavorite }.map { clip in
+                let category: ClipCategoryType = clip.isReel ? .reel : (clip.highlightIndex == nil ? .fullRecording : .highlight)
+                return (clip, category)
+            }
         }
         
         return list
@@ -689,11 +764,14 @@ private struct SessionCardView: View {
                             category: item.category,
                             allClips: filteredClipsWithCategories.map { $0.clip },
                             fullVideoURL: session.fullVideoURL,
+                            originalVideoDeletionDate: session.originalVideoDeletionDate,
                             sessionDuration: session.duration,
                             isSelectionMode: isSelectionMode,
                             isSelected: selectedClipIDs.contains(item.clip.id),
                             isReelSelectionMode: isReelSelectionMode,
                             isReelSelected: selectedReelClipIDs.contains(item.clip.id),
+                            reelSelectionNumber: selectedReelClipIDs.firstIndex(of: item.clip.id).map { $0 + 1 },
+                            isLandscape: isLandscapeSession,
                             onSelectToggle: { toggleSelection(item.clip.id) },
                             onReelSelectToggle: { toggleReelSelection(item.clip.id) },
                             onDelete: {
@@ -702,7 +780,8 @@ private struct SessionCardView: View {
                                 } else {
                                     recordingVM.deleteClip(sessionID: session.id, clipID: item.clip.id)
                                 }
-                            }
+                            },
+                            onOpenPlayer: onOpenPlayer
                         )
                     }
                 }
@@ -740,8 +819,11 @@ private struct SessionCardView: View {
     }
     
     private func toggleReelSelection(_ clipID: UUID) {
-        if selectedReelClipIDs.contains(clipID) { selectedReelClipIDs.remove(clipID) }
-        else { selectedReelClipIDs.insert(clipID) }
+        if let index = selectedReelClipIDs.firstIndex(of: clipID) {
+            selectedReelClipIDs.remove(at: index)
+        } else {
+            selectedReelClipIDs.append(clipID)
+        }
     }
 }
 
@@ -755,6 +837,72 @@ private struct PressableCardStyle: ButtonStyle {
     }
 }
 
+/// Thumbnail rendering is expensive. Keeping a small in-memory cache prevents
+/// cards that return to the viewport from decoding the same video frame again.
+private actor GalleryThumbnailRenderLimiter {
+    static let shared = GalleryThumbnailRenderLimiter()
+    private var activeRenders = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        if activeRenders < 2 {
+            activeRenders += 1
+            return
+        }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func release() {
+        if let next = waiting.first {
+            waiting.removeFirst()
+            next.resume()
+        } else {
+            activeRenders -= 1
+        }
+    }
+}
+
+private enum GalleryThumbnailCache {
+    nonisolated(unsafe) static let images = NSCache<NSURL, UIImage>()
+
+    static func image(for url: URL) -> UIImage? {
+        images.object(forKey: url as NSURL)
+    }
+
+    static func renderMidpoint(for url: URL) async -> UIImage? {
+        if let cached = image(for: url) { return cached }
+
+        // Fast scrolling can expose many cards at once. Limit the costly
+        // frame decodes so they cannot contend with the scrolling renderer.
+        await GalleryThumbnailRenderLimiter.shared.acquire()
+        if let cached = image(for: url) {
+            await GalleryThumbnailRenderLimiter.shared.release()
+            return cached
+        }
+
+        let image: UIImage? = await Task.detached(priority: .utility) { () -> UIImage? in
+            let asset = AVURLAsset(url: url)
+            guard let duration = try? await asset.load(.duration) else { return nil }
+
+            let seconds = duration.seconds > 0 ? duration.seconds / 2 : 0.5
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 300, height: 435)
+
+            guard let cgImage = try? generator.copyCGImage(
+                at: CMTime(seconds: seconds, preferredTimescale: 600),
+                actualTime: nil
+            ) else { return nil }
+
+            let image = UIImage(cgImage: cgImage)
+            images.setObject(image, forKey: url as NSURL)
+            return image
+        }.value
+        await GalleryThumbnailRenderLimiter.shared.release()
+        return image
+    }
+}
+
 private struct UnifiedGridCardView: View {
     @EnvironmentObject var recordingVM: RecordingViewModel
     let sessionID: UUID
@@ -762,6 +910,7 @@ private struct UnifiedGridCardView: View {
     let category: ClipCategoryType
     let allClips: [Clip]
     let fullVideoURL: URL?
+    let originalVideoDeletionDate: Date?
     let sessionDuration: TimeInterval
     
     let isSelectionMode: Bool
@@ -769,14 +918,51 @@ private struct UnifiedGridCardView: View {
     
     let isReelSelectionMode: Bool
     let isReelSelected: Bool
+    let reelSelectionNumber: Int?
+    /// The session determines this once. Individual thumbnails must not alter
+    /// their card height as they load, which otherwise shifts the scroll view.
+    let isLandscape: Bool
     
     let onSelectToggle: () -> Void
     let onReelSelectToggle: () -> Void
     let onDelete: () -> Void
+    let onOpenPlayer: (ClipPlayerPresentation) -> Void
     
-    @State private var showPlayer = false
     @State private var thumbnail: UIImage? = nil
-    @State private var isLandscape = false
+    @State private var showOriginalVideoRetentionInfo = false
+
+    private var originalVideoTimeRemaining: TimeInterval? {
+        guard category == .fullRecording, let deletionDate = originalVideoDeletionDate else { return nil }
+        // Read the published clock so the card refreshes every minute, but use
+        // the actual current time so a newly displayed card never starts from
+        // a stale refresh timestamp.
+        _ = recordingVM.retentionClock
+        return max(0, deletionDate.timeIntervalSinceNow)
+    }
+
+    private var originalVideoRemainingLabel: String? {
+        guard let timeRemaining = originalVideoTimeRemaining else { return nil }
+        let day: TimeInterval = 24 * 60 * 60
+        let hour: TimeInterval = 60 * 60
+
+        if timeRemaining >= day {
+            let days = max(1, Int(ceil(timeRemaining / day)))
+            return "\(days)d"
+        }
+
+        // Once the countdown is under a day, never show 24h. The transition
+        // should be 1d -> 23h.
+        let hours = min(23, max(1, Int(ceil(timeRemaining / hour))))
+        return "\(hours)h"
+    }
+
+    private var originalVideoTimerLeadingPadding: CGFloat {
+        // The timer is an overlay, so reserve the same space used by the
+        // selection circle and the favorite badge in the card's top row.
+        let selectionPadding: CGFloat = (isSelectionMode || isReelSelectionMode) ? 28 : 0
+        let favoritePadding: CGFloat = clip.isFavorite ? 34 : 0
+        return 8 + selectionPadding + favoritePadding
+    }
     
     var body: some View {
         let reelColor = Color.blueMarble
@@ -787,7 +973,14 @@ private struct UnifiedGridCardView: View {
             } else if isReelSelectionMode {
                 withAnimation { onReelSelectToggle() }
             } else {
-                showPlayer = true
+                onOpenPlayer(
+                    ClipPlayerPresentation(
+                        clips: allClips,
+                        initialClipID: clip.id,
+                        fullVideoURL: fullVideoURL,
+                        sessionDuration: sessionDuration
+                    )
+                )
             }
         } label: {
             GeometryReader { geo in
@@ -821,10 +1014,19 @@ private struct UnifiedGridCardView: View {
                                     .foregroundColor(isSelected ? category.color : .white)
                                     .background(Circle().fill(Color.black.opacity(isSelected ? 0 : 0.4)))
                             } else if isReelSelectionMode {
-                                Image(systemName: isReelSelected ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 22, weight: .bold))
-                                    .foregroundColor(isReelSelected ? reelColor : .white)
-                                    .background(Circle().fill(Color.black.opacity(isReelSelected ? 0 : 0.4)))
+                                if let reelSelectionNumber {
+                                    Text("\(reelSelectionNumber)")
+                                        .font(.system(size: 13, weight: .heavy, design: .rounded))
+                                        .foregroundColor(.white)
+                                        .frame(width: 23, height: 23)
+                                        .background(reelColor)
+                                        .clipShape(Circle())
+                                } else {
+                                    Image(systemName: "circle")
+                                        .font(.system(size: 22, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .background(Circle().fill(Color.black.opacity(0.4)))
+                                }
                             }
                             
                             if clip.isFavorite {
@@ -882,25 +1084,35 @@ private struct UnifiedGridCardView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableCardStyle())
-        .fullScreenCover(isPresented: $showPlayer) {
-            ClipPagerView(
-                clips: allClips,
-                initialClipID: clip.id,
-                fullVideoURL: fullVideoURL,
-                sessionDuration: sessionDuration,
-                onDelete: { _ in onDelete() },
-                onTrimSaved: { u in
-                    recordingVM.updateClip(u)
-                    if u.id != clip.id {
-                        // Saved as a NEW clip — dismiss here and route to the Highlights tab instead
-                        showPlayer = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            recordingVM.pendingHighlightToOpen = u
-                        }
+        .overlay(alignment: .topLeading) {
+            if let remainingLabel = originalVideoRemainingLabel {
+                Button {
+                    showOriginalVideoRetentionInfo = true
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "timer")
+                        Text(remainingLabel)
                     }
-                },
-                onRename: { c, n in var u = c; u.customName = n; recordingVM.updateClip(u) }
-            )
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 5)
+                    .background(Color.black.opacity(0.7))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+                .padding(.leading, originalVideoTimerLeadingPadding)
+            }
+        }
+        .alert("Original Video Auto-Delete", isPresented: $showOriginalVideoRetentionInfo) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let remainingLabel = originalVideoRemainingLabel {
+                Text("Automatic deletion is enabled for this original video. It will be deleted in about \(remainingLabel) to save storage. Your saved highlights and reels will remain in the gallery.")
+            } else {
+                Text("Automatic deletion is enabled for original videos to save storage. Your saved highlights and reels remain in the gallery.")
+            }
         }
         .onAppear { loadMidpointThumbnail() }
         .onChange(of: clip.fileURL) { _, newURL in
@@ -922,7 +1134,12 @@ private struct UnifiedGridCardView: View {
     
     private func loadMidpointThumbnail() {
         guard let url = clip.fileURL, thumbnail == nil else { return }
-        Task(priority: .userInitiated) {
+        if let cached = GalleryThumbnailCache.image(for: url) {
+            thumbnail = cached
+            return
+        }
+
+        Task(priority: .utility) {
             var retries = 0
             while !FileManager.default.fileExists(atPath: url.path) && retries < 10 {
                 try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
@@ -930,26 +1147,11 @@ private struct UnifiedGridCardView: View {
             }
             
             guard FileManager.default.fileExists(atPath: url.path) else { return }
-            
-            let asset = AVURLAsset(url: url)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 300, height: 435)
-            
-            if let duration = try? await asset.load(.duration) {
-                let midPoint = CMTimeGetSeconds(duration) > 0 ? CMTimeGetSeconds(duration) / 2.0 : 0.5
-                let target = CMTime(seconds: midPoint, preferredTimescale: 600)
-                if let cgImage = try? generator.copyCGImage(at: target, actualTime: nil) {
-                    
-                    // 🌟 Detect orientation from the generated frame
-                    let detectedLandscape = cgImage.width > cgImage.height
-                    
-                    await MainActor.run {
-                        self.isLandscape = detectedLandscape
-                        withAnimation(.easeIn(duration: 0.25)) {
-                            self.thumbnail = UIImage(cgImage: cgImage)
-                        }
-                    }
+            if let image = await GalleryThumbnailCache.renderMidpoint(for: url) {
+                await MainActor.run {
+                    // Do not animate or resize the card when an image
+                    // arrives—both cause scrolling to visibly jump.
+                    self.thumbnail = image
                 }
             }
         }
@@ -962,6 +1164,7 @@ struct RenameClipSheet: View {
     @Binding var editedTitle: String
     let onSave: (String) -> Void
     let onDismiss: () -> Void
+    @FocusState private var titleIsFocused: Bool
     
     var body: some View {
         VStack(spacing: 16) {
@@ -976,12 +1179,18 @@ struct RenameClipSheet: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title2)
                         .foregroundColor(.gray)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
             
             TextField("Hype block, goal, rally, etc!", text: $editedTitle, axis: .vertical)
                 .lineLimit(3, reservesSpace: true)
                 .textInputAutocapitalization(.words)
+                .submitLabel(.return)
+                .focused($titleIsFocused)
+                .onSubmit { saveTitle() }
                 .font(.system(size: 16, weight: .semibold))
                 .padding(12)
                 .background(Color(white: 0.95))
@@ -993,35 +1202,52 @@ struct RenameClipSheet: View {
                 )
             
             HStack(spacing: 12) {
-                Button("Cancel") {
+                Button {
                     onDismiss()
+                } label: {
+                    Text("Cancel")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Color(white: 0.9))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .contentShape(Rectangle())
                 }
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color(white: 0.9))
-                .cornerRadius(10)
+                .buttonStyle(.plain)
                 
-                Button("Save") {
-                    let clean = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !clean.isEmpty {
-                        onSave(clean)
-                    }
-                    onDismiss()
+                Button {
+                    saveTitle()
+                } label: {
+                    Text("Save")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Color.crimsonBlaze)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .contentShape(Rectangle())
                 }
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.crimsonBlaze)
-                .cornerRadius(10)
+                .buttonStyle(.plain)
             }
         }
         .padding(20)
         .background(Color.white)
         .cornerRadius(20)
         .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 8)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                titleIsFocused = true
+            }
+        }
+    }
+
+    private func saveTitle() {
+        let clean = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !clean.isEmpty {
+            onSave(clean)
+        }
+        onDismiss()
     }
 }
 
@@ -1032,6 +1258,7 @@ struct RenameSessionSheet: View {
     @Binding var draftName: String
     let onSave: () -> Void
     let onCancel: () -> Void
+    @FocusState private var nameIsFocused: Bool
     
     var body: some View {
         NavigationStack {
@@ -1044,28 +1271,39 @@ struct RenameSessionSheet: View {
                 TextField("Session Name", text: $draftName)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 16, weight: .medium))
+                    .submitLabel(.return)
+                    .focused($nameIsFocused)
+                    .onSubmit { onSave() }
                     .padding(.horizontal, 20)
                 
                 HStack(spacing: 12) {
-                    Button("Cancel") {
+                    Button {
                         onCancel()
+                    } label: {
+                        Text("Cancel")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(Color(white: 0.9))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .contentShape(Rectangle())
                     }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color(white: 0.9))
-                    .cornerRadius(10)
+                    .buttonStyle(.plain)
                     
-                    Button("Save") {
+                    Button {
                         onSave()
+                    } label: {
+                        Text("Save")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(Color.crimsonBlaze)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .contentShape(Rectangle())
                     }
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.crimsonBlaze)
-                    .cornerRadius(10)
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 20)
                 
@@ -1073,7 +1311,12 @@ struct RenameSessionSheet: View {
             }
             .background(Color.white.ignoresSafeArea())
         }
-        .presentationDetents([.height(220)])
+        .presentationDetents([.height(280)])
         .presentationDragIndicator(.visible)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                nameIsFocused = true
+            }
+        }
     }
 }

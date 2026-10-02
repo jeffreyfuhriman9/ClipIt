@@ -1,4 +1,65 @@
 import SwiftUI
+import UIKit
+
+private struct IPadBottomTabBar: View {
+    @Binding var selection: Int
+
+    private let tabs: [(title: String, icon: String, tag: Int)] = [
+        ("Record", "video.circle.fill", 0),
+        ("Clips", "film.stack", 1),
+        ("Device", "antenna.radiowaves.left.and.right", 2),
+        ("Settings", "gearshape.fill", 3)
+    ]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(tabs, id: \.tag) { tab in
+                Button {
+                    selection = tab.tag
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 19, weight: .semibold))
+                        Text(tab.title)
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(selection == tab.tag ? Color.crimsonBlaze : Color.secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 58)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 24)
+        .background(.regularMaterial)
+        .overlay(alignment: .top) {
+            Divider()
+        }
+    }
+}
+
+/// iPadOS uses its system tab strip at the top of the display. Hide that
+/// adaptive strip and supply a bottom bar that matches ClipIt's iPhone layout.
+private struct BottomTabBarOnIPad: ViewModifier {
+    @Binding var selection: Int
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            content
+                // The standard iPad TabView always supplies its own top tab
+                // strip. A page-style container has no built-in strip, so the
+                // custom bottom bar below is the only navigation shown.
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    IPadBottomTabBar(selection: $selection)
+                }
+        } else {
+            content
+        }
+    }
+}
 
 struct ContentView: View {
     @EnvironmentObject var bleVM: BLEViewModel
@@ -49,7 +110,7 @@ struct ContentView: View {
                 ClipsView()
                     .toolbarBackground(.visible, for: .tabBar)
                     .tabItem {
-                        Label("Clips", systemImage: "film.stack")
+                        Label("Library", systemImage: "film.stack")
                     }
                     .tag(1)
 
@@ -69,6 +130,7 @@ struct ContentView: View {
                     }
                     .tag(3)
             }
+            .modifier(BottomTabBarOnIPad(selection: $selectedTab))
             .tint(.crimsonBlaze) // Selected tab remains Red across all screens
             .onChange(of: recordingVM.shouldNavigateToClips) { oldValue, navigating in
                 if navigating {

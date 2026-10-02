@@ -23,6 +23,7 @@ final class RecordingViewModel: ObservableObject {
     @Published var currentSession: Session?
     @Published var sessions: [Session] = []
     @Published var elapsedTime: TimeInterval = 0
+    @Published private(set) var retentionClock = Date()
     @Published var clipCount: Int = 0
     @Published var bufferLengthSeconds: Int = 10
     @Published var postRollSeconds: Int = 0
@@ -31,6 +32,7 @@ final class RecordingViewModel: ObservableObject {
     @Published var isProcessingWatermark: Bool = false
     @Published var justFinishedSessionClips: [URL] = []
     @Published var isImportingSecondary: Bool = false
+    @Published private(set) var latestTriggeredClip: Clip?
     
     @Published var selectedVideoQuality: CameraManager.VideoQuality = .hd1080p
     
@@ -61,6 +63,7 @@ final class RecordingViewModel: ObservableObject {
     let cameraManager = CameraManager()
     private let bufferManager = BufferManager()
     private var sessionTimer: AnyCancellable?
+    private var originalVideoRetentionTimer: AnyCancellable?
     private var sessionStart: Date?
     var cancellables = Set<AnyCancellable>()
     private var pendingFullSessionID: UUID?
@@ -85,6 +88,7 @@ final class RecordingViewModel: ObservableObject {
             self.sessions = loaded
             
             self.validateLoadedSessions()
+            self.applyOriginalVideoRetention(days: UserDefaults.standard.integer(forKey: "originalVideoRetentionDays"))
             
             self.setupSubscribers()
             self.retryIncompleteHighlightExtractions()
@@ -120,6 +124,15 @@ final class RecordingViewModel: ObservableObject {
                 self?.handleCameraInterruption(notification)
             }
             .store(in: &cancellables)
+
+        originalVideoRetentionTimer?.cancel()
+        originalVideoRetentionTimer = Timer.publish(every: 60, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                let days = UserDefaults.standard.integer(forKey: "originalVideoRetentionDays")
+                self?.retentionClock = Date()
+                self?.applyOriginalVideoRetention(days: days)
+            }
     }
     
     private func handleCameraInterruption(_ notification: Notification) {
@@ -287,12 +300,30 @@ final class RecordingViewModel: ObservableObject {
         )
         
         pendingHighlightClips.append(newClip)
+        latestTriggeredClip = newClip
         currentSession?.clips = pendingHighlightClips
+    }
+
+    func favoriteLatestTriggeredClip() {
+        guard let latest = latestTriggeredClip,
+              let pendingIndex = pendingHighlightClips.firstIndex(where: { $0.id == latest.id }) else { return }
+
+        pendingHighlightClips[pendingIndex].isFavorite = true
+        latestTriggeredClip = pendingHighlightClips[pendingIndex]
+        currentSession?.clips = pendingHighlightClips
+
+        if let sessionIndex = sessions.firstIndex(where: { $0.id == latest.sessionID }),
+           let clipIndex = sessions[sessionIndex].clips.firstIndex(where: { $0.id == latest.id }) {
+            sessions[sessionIndex].clips[clipIndex].isFavorite = true
+        }
+        saveSessionsToDisk()
     }
     
     // MARK: - Session Lifecycle
         
     private func beginRecordingSession(session: Session) {
+        var session = session
+        scheduleOriginalVideoDeletionIfNeeded(for: &session)
         self.shouldNavigateToClips = false
         self.currentSession = session
         self.clipCount = 0
@@ -310,6 +341,12 @@ final class RecordingViewModel: ObservableObject {
         let url = fullSessionURL(for: session)
         pendingFullSessionID = session.id
         cameraManager.startMovieRecording(to: url)
+    }
+
+    private func scheduleOriginalVideoDeletionIfNeeded(for session: inout Session) {
+        let days = UserDefaults.standard.integer(forKey: "originalVideoRetentionDays")
+        guard days > 0, session.originalVideoDeletionDate == nil else { return }
+        session.originalVideoDeletionDate = Date().addingTimeInterval(Double(days) * 24 * 60 * 60)
     }
     
     func requestStartSession(multipeerManager: MultipeerManager) {
@@ -472,6 +509,11 @@ final class RecordingViewModel: ObservableObject {
         
         sessions[index].fullVideoURL = nil
         sessions[index].clips.removeAll(where: { $0.highlightIndex == nil })
+
+        let removedEmptySession = removeEmptySessions()
+        if !removedEmptySession, currentSession?.id == sessionID {
+            currentSession = sessions.first(where: { $0.id == sessionID })
+        }
         
         if let url = targetURL {
             Task.detached(priority: .background) {
@@ -516,6 +558,10 @@ final class RecordingViewModel: ObservableObject {
         }
         
         sessions[sessionIndex].clips.remove(at: clipIndex)
+        let removedEmptySession = removeEmptySessions()
+        if !removedEmptySession, currentSession?.id == sessionID {
+            currentSession = sessions.first(where: { $0.id == sessionID })
+        }
         saveSessionsToDisk()
         updateStorageSize()
     }
@@ -576,8 +622,83 @@ final class RecordingViewModel: ObservableObject {
                 }
             }
         }
+
+        if removeEmptySessions() {
+            needsResave = true
+        }
         
         if needsResave { saveSessionsToDisk() }
+    }
+
+    @discardableResult
+    private func removeEmptySessions() -> Bool {
+        let emptySessionIDs = Set(sessions.filter { $0.clips.isEmpty }.map { $0.id })
+        guard !emptySessionIDs.isEmpty else { return false }
+
+        sessions.removeAll { emptySessionIDs.contains($0.id) }
+        if let currentSession, emptySessionIDs.contains(currentSession.id) {
+            self.currentSession = nil
+        }
+        return true
+    }
+
+    func applyOriginalVideoRetention(days: Int) {
+        if days == 0 {
+            var needsResave = false
+            for index in sessions.indices where sessions[index].originalVideoDeletionDate != nil {
+                sessions[index].originalVideoDeletionDate = nil
+                needsResave = true
+            }
+            if currentSession?.originalVideoDeletionDate != nil {
+                currentSession?.originalVideoDeletionDate = nil
+            }
+            if removeEmptySessions() {
+                needsResave = true
+            }
+            if needsResave {
+                saveSessionsToDisk()
+                updateStorageSize()
+            }
+            return
+        }
+
+        let now = Date()
+        let newDeletionDate = now.addingTimeInterval(Double(days) * 24 * 60 * 60)
+        var deletedURLs: [URL] = []
+        var needsResave = false
+
+        for index in sessions.indices {
+            guard sessions[index].fullVideoURL != nil else { continue }
+
+            if sessions[index].originalVideoDeletionDate == nil {
+                sessions[index].originalVideoDeletionDate = newDeletionDate
+                needsResave = true
+            }
+
+            if let deletionDate = sessions[index].originalVideoDeletionDate,
+               deletionDate <= now,
+               let url = sessions[index].fullVideoURL {
+                deletedURLs.append(url)
+                sessions[index].fullVideoURL = nil
+                sessions[index].originalVideoDeletionDate = nil
+                sessions[index].clips.removeAll { $0.highlightIndex == nil && !$0.isSecondaryAngle }
+                needsResave = true
+            }
+        }
+
+        if removeEmptySessions() {
+            needsResave = true
+        }
+
+        if !deletedURLs.isEmpty {
+            Task.detached(priority: .background) {
+                for url in deletedURLs { try? FileManager.default.removeItem(at: url) }
+            }
+        }
+        if needsResave {
+            saveSessionsToDisk()
+            updateStorageSize()
+        }
     }
     
     private func retryIncompleteHighlightExtractions() {

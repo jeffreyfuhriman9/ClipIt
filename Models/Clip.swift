@@ -180,7 +180,7 @@ struct Clip: Identifiable, Codable, Equatable {
         if let customName = customName { return customName }
         if isSecondaryAngle, let index = highlightIndex { return "Highlight #\(index) - Camera 2" }
         if let index = highlightIndex {
-            return "Highlight #\(index)"
+            return "Clip #\(index)"
         }
         return "Original Video"
     }
@@ -210,6 +210,7 @@ struct Session: Identifiable, Codable {
     var endedAt: Date?
     var clips: [Clip]
     var fullVideoURL: URL?
+    var originalVideoDeletionDate: Date?
     var isSaved: Bool
     var isProcessing: Bool = false
     var processingProgress: Double = 0.0
@@ -234,10 +235,11 @@ struct Session: Identifiable, Codable {
         self.startedAt = startedAt
         self.clips = clips
         self.isSaved = isSaved
+        self.originalVideoDeletionDate = nil
     }
     
     enum CodingKeys: String, CodingKey {
-        case id, name, sessionNumber, mode, startedAt, endedAt, clips, fullVideoURL, isSaved, isProcessing, processingProgress
+        case id, name, sessionNumber, mode, startedAt, endedAt, clips, fullVideoURL, originalVideoDeletionDate, isSaved, isProcessing, processingProgress
     }
     
     init(from decoder: Decoder) throws {
@@ -255,6 +257,8 @@ struct Session: Identifiable, Codable {
         } else {
             fullVideoURL = nil
         }
+
+        originalVideoDeletionDate = try container.decodeIfPresent(Date.self, forKey: .originalVideoDeletionDate)
         
         isSaved = try container.decode(Bool.self, forKey: .isSaved)
         isProcessing = try container.decodeIfPresent(Bool.self, forKey: .isProcessing) ?? false
@@ -271,6 +275,7 @@ struct Session: Identifiable, Codable {
         try container.encodeIfPresent(endedAt, forKey: .endedAt)
         try container.encode(clips, forKey: .clips)
         try container.encodeIfPresent(fullVideoURL, forKey: .fullVideoURL)
+        try container.encodeIfPresent(originalVideoDeletionDate, forKey: .originalVideoDeletionDate)
         try container.encode(isSaved, forKey: .isSaved)
         try container.encode(isProcessing, forKey: .isProcessing)
         try container.encode(processingProgress, forKey: .processingProgress)
