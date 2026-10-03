@@ -279,11 +279,11 @@ struct BLEDeviceView: View {
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .top, spacing: 16) {
-                Image(systemName: "antenna.radiowaves.left.and.right")
+                Image(systemName: "button.programmable.square")
                     .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(Color.blueMarble)
+                    .foregroundStyle(Color.crimsonBlaze)
                     .frame(width: 64, height: 64)
-                    .background(Color.blueMarble.opacity(0.12), in: RoundedRectangle(cornerRadius: 18))
+                    .background(Color.crimsonBlaze.opacity(0.12), in: RoundedRectangle(cornerRadius: 18))
 
                 Spacer(minLength: 8)
 
@@ -390,13 +390,6 @@ struct BLEDeviceView: View {
 
                 if !isConnecting && !bleVM.discoveredDevices.isEmpty {
                     nearbyDevicesCard
-                } else if !isConnecting {
-                    Text("Keep your button on and nearby. It will appear here when found.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
                 }
             }
         }
@@ -656,7 +649,7 @@ struct SettingsView: View {
                 
                 Section("Bluetooth") {
                     NavigationLink(destination: BLEDeviceView()) {
-                        SettingsRow(icon: "antenna.radiowaves.left.and.right", color: .blueMarble, label: "ClipIt Button") {
+                        SettingsRow(icon: "button.programmable.square", color: .crimsonBlaze, label: "ClipIt Button") {
                             Text("Configure").foregroundColor(.secondary).font(.system(size: 14))
                         }
                     }

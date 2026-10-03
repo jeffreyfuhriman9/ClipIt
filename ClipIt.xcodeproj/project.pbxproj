@@ -41,6 +41,8 @@
 		1F9932963022A511009A6D01 /* CreateReelSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9932953022A511009A6D01 /* CreateReelSheet.swift */; };
 		1F9932983023B136009A6D01 /* ClipsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9932973023B136009A6D01 /* ClipsView.swift */; };
 		1FA0B76B2FD8A04B009B0DCF /* CallKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FA0B76A2FD8A04B009B0DCF /* CallKit.framework */; };
+		1FA118163070BDD900354065 /* sprint_time_log.md in Resources */ = {isa = PBXBuildFile; fileRef = 1FA118153070BDCF00354065 /* sprint_time_log.md */; };
+		1FA118183070BDF100354065 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 1FA118173070BDE100354065 /* README.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -78,6 +80,8 @@
 		1F9932953022A511009A6D01 /* CreateReelSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateReelSheet.swift; sourceTree = "<group>"; };
 		1F9932973023B136009A6D01 /* ClipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipsView.swift; sourceTree = "<group>"; };
 		1FA0B76A2FD8A04B009B0DCF /* CallKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CallKit.framework; path = System/Library/Frameworks/CallKit.framework; sourceTree = SDKROOT; };
+		1FA118153070BDCF00354065 /* sprint_time_log.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = sprint_time_log.md; sourceTree = "<group>"; };
+		1FA118173070BDE100354065 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		1FE9223D2F86EBD100ED9558 /* Clipit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Clipit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -178,6 +182,8 @@
 		1FE922342F86EBD100ED9558 = {
 			isa = PBXGroup;
 			children = (
+				1FA118173070BDE100354065 /* README.md */,
+				1FA118153070BDCF00354065 /* sprint_time_log.md */,
 				1F99322C30191D5D009A6D01 /* Assets.xcassets */,
 				1F99322E30191D5D009A6D01 /* Info.plist */,
 				1F99328F3022A487009A6D01 /* ReelBuilder */,
@@ -265,6 +271,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1FA118183070BDF100354065 /* README.md in Resources */,
+				1FA118163070BDD900354065 /* sprint_time_log.md in Resources */,
 				1F99327630191D5D009A6D01 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

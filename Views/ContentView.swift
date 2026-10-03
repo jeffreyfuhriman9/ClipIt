@@ -7,7 +7,7 @@ private struct IPadBottomTabBar: View {
     private let tabs: [(title: String, icon: String, tag: Int)] = [
         ("Record", "video.circle.fill", 0),
         ("Clips", "film.stack", 1),
-        ("Device", "antenna.radiowaves.left.and.right", 2),
+        ("Device", "button.programmable.square", 2),
         ("Settings", "gearshape.fill", 3)
     ]
 
@@ -118,7 +118,7 @@ struct ContentView: View {
                 BLEDeviceView()
                     .toolbarBackground(.visible, for: .tabBar)
                     .tabItem {
-                        Label("Device", systemImage: "antenna.radiowaves.left.and.right")
+                        Label("Device", systemImage: "button.programmable.square")
                     }
                     .tag(2)
 

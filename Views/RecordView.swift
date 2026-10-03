@@ -155,6 +155,9 @@ struct RecordView: View {
                 .animation(.easeInOut(duration: 0.25), value: isLandscape)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                // The interface and its controls stay in the orientation in
+                // which this recording began, even as the phone is moved.
+                guard recordingVM.recordingState != .active else { return }
                 let newOrientation = UIDevice.current.orientation
                 if newOrientation.isValidInterfaceOrientation { orientation = newOrientation }
             }
@@ -253,6 +256,10 @@ struct RecordView: View {
                     UIScreen.main.brightness = 0.01
                 }
             } else {
+                let currentOrientation = UIDevice.current.orientation
+                if currentOrientation.isValidInterfaceOrientation {
+                    orientation = currentOrientation
+                }
                 if dimScreenDuringRecording {
                     UIScreen.main.brightness = originalBrightness
                 }

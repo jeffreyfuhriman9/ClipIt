@@ -15,6 +15,7 @@ enum TitleCardColor: String, CaseIterable, Identifiable {
     case white = "White"
     case red = "Red"
     case orange = "Orange"
+    case yellow = "Yellow"
     case green = "Green"
     case blue = "Blue"
     case purple = "Purple"
@@ -27,6 +28,7 @@ enum TitleCardColor: String, CaseIterable, Identifiable {
         case .white: return .white
         case .red: return .red
         case .blue: return .blue
+        case .yellow: return .yellow
         case .green: return .green
         case .purple: return .purple
         case .orange: return .orange
@@ -38,6 +40,7 @@ enum TitleCardColor: String, CaseIterable, Identifiable {
         case .black: return .black
         case .white: return .white
         case .red: return .systemRed
+        case .yellow: return .systemYellow
         case .blue: return .systemBlue
         case .green: return .systemGreen
         case .purple: return .systemPurple

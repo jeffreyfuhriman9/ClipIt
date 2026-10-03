@@ -27,12 +27,29 @@ final class CameraManager: NSObject, ObservableObject {
     private var audioInput: AVCaptureDeviceInput?
     private var videoDataOutput: AVCaptureVideoDataOutput?
     private var movieFileOutput: AVCaptureMovieFileOutput?
+    private weak var activePreviewLayer: AVCaptureVideoPreviewLayer?
 
     @available(iOS 17.0, *)
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var previewRotationObservation: NSKeyValueObservation?
     private var captureRotationObservation: NSKeyValueObservation?
     private var currentCaptureRotationAngle: CGFloat = 0
+    private var latestCaptureRotationAngle: CGFloat = 0
+    private var activeMovieURL: URL?
+    private let recordingRotationLock = NSLock()
+    private var recordingRotationLocked = false
+
+    private var isRecordingRotationLocked: Bool {
+        recordingRotationLock.lock()
+        defer { recordingRotationLock.unlock() }
+        return recordingRotationLocked
+    }
+
+    private func setRecordingRotationLocked(_ locked: Bool) {
+        recordingRotationLock.lock()
+        recordingRotationLocked = locked
+        recordingRotationLock.unlock()
+    }
 
     // MARK: - Video Quality
 
@@ -362,6 +379,7 @@ final class CameraManager: NSObject, ObservableObject {
         func attachPreviewLayer(_ previewLayer: AVCaptureVideoPreviewLayer) {
             previewLayer.session = session
             previewLayer.videoGravity = .resizeAspectFill
+            activePreviewLayer = previewLayer
 
             guard let device = videoInput?.device else { return }
 
@@ -372,27 +390,21 @@ final class CameraManager: NSObject, ObservableObject {
                 let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
                 rotationCoordinator = coordinator
 
-                // 🔥 THE FIX: Capture 'self' and check for active recording
-                previewRotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.initial, .new]) { [weak self, weak previewLayer] coordinator, _ in
-                    guard let self = self, let previewLayer = previewLayer else { return }
+                previewRotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.initial, .new]) { [weak previewLayer] coordinator, _ in
+                    guard let previewLayer else { return }
                     
                     let angle = coordinator.videoRotationAngleForHorizonLevelPreview
-                    let isActivelyRecording = self.movieFileOutput?.isRecording ?? false
-                    
-                    DispatchQueue.main.async {
-                        // Only spin the preview layer if we are NOT recording
-                        if !isActivelyRecording {
-                            guard let connection = previewLayer.connection,
-                                  connection.isVideoRotationAngleSupported(angle) else { return }
-                            connection.videoRotationAngle = angle
-                        }
-                    }
+                    // The coordinator calls this observer on the main queue.
+                    // Update the live preview immediately as the phone moves;
+                    // only the recorded outputs keep their starting angle.
+                    guard let connection = previewLayer.connection,
+                          connection.isVideoRotationAngleSupported(angle) else { return }
+                    connection.videoRotationAngle = angle
                 }
 
                 captureRotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.initial, .new]) { [weak self] coordinator, _ in
                     guard let self else { return }
                     let angle = coordinator.videoRotationAngleForHorizonLevelCapture
-                    self.currentCaptureRotationAngle = angle
                     self.applyCaptureRotationToOutputs(angle)
                 }
             }
@@ -401,37 +413,40 @@ final class CameraManager: NSObject, ObservableObject {
     func detachPreviewLayer() {
         previewRotationObservation = nil
         captureRotationObservation = nil
+        activePreviewLayer = nil
         if #available(iOS 17.0, *) { rotationCoordinator = nil }
     }
 
     private func applyCaptureRotationToOutputs(_ angle: CGFloat) {
-            sessionQueue.async { [weak self] in
-                guard let self else { return }
-                
-                // 🛑 THE FIX: Prevent changing orientation while actively writing to a file!
-                // If we change this mid-recording, AVFoundation aborts the file immediately.
-                let isActivelyRecording = self.movieFileOutput?.isRecording ?? false
-                
-                if !isActivelyRecording {
-                    if let connection = self.movieFileOutput?.connection(with: .video),
-                       connection.isVideoRotationAngleSupported(angle) {
-                        connection.videoRotationAngle = angle
-                    }
-                }
-                
-                // It is safe to update the video data output (used for live frame analysis)
-                // even while recording, so we don't need to lock this one.
-                if let connection = self.videoDataOutput?.connection(with: .video),
-                   connection.isVideoRotationAngleSupported(angle) {
-                    connection.videoRotationAngle = angle
-                }
-            }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.latestCaptureRotationAngle = angle
+            self.applyCaptureRotationOnSessionQueue(angle)
         }
+    }
+
+    private func applyCaptureRotationOnSessionQueue(_ angle: CGFloat) {
+        // Freeze both output connections from the moment recording is
+        // requested. `movieFileOutput.isRecording` becomes true later, leaving
+        // a window where rotating could otherwise abort the movie file.
+        guard !isRecordingRotationLocked else { return }
+        currentCaptureRotationAngle = angle
+
+        if let connection = movieFileOutput?.connection(with: .video),
+           connection.isVideoRotationAngleSupported(angle) {
+            connection.videoRotationAngle = angle
+        }
+        if let connection = videoDataOutput?.connection(with: .video),
+           connection.isVideoRotationAngleSupported(angle) {
+            connection.videoRotationAngle = angle
+        }
+    }
 
     // MARK: - Recording
 
     func startMovieRecording(to url: URL) {
         guard let movieOutput = movieFileOutput else { return }
+        setRecordingRotationLocked(true)
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
             
@@ -445,6 +460,7 @@ final class CameraManager: NSObject, ObservableObject {
                 }
             }
             
+            self.activeMovieURL = url
             if let connection = movieOutput.connection(with: .video),
                connection.isVideoRotationAngleSupported(self.currentCaptureRotationAngle) {
                 connection.videoRotationAngle = self.currentCaptureRotationAngle
@@ -559,7 +575,26 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
                                 from connections: [AVCaptureConnection],
                                 error: Error?) {
         if let error { print("[CameraManager] movie recording error: \(error)") }
-        Task { @MainActor in self.movieFileReady.send(outputFileURL) }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            if self.activeMovieURL == outputFileURL {
+                self.activeMovieURL = nil
+                self.setRecordingRotationLocked(false)
+                self.applyCaptureRotationOnSessionQueue(self.latestCaptureRotationAngle)
+            }
+            DispatchQueue.main.async {
+                if #available(iOS 17.0, *),
+                   let previewLayer = self.activePreviewLayer,
+                   let coordinator = self.rotationCoordinator {
+                    let angle = coordinator.videoRotationAngleForHorizonLevelPreview
+                    if let connection = previewLayer.connection,
+                       connection.isVideoRotationAngleSupported(angle) {
+                        connection.videoRotationAngle = angle
+                    }
+                }
+                self.movieFileReady.send(outputFileURL)
+            }
+        }
     }
 }
 

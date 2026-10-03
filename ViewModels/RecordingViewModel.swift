@@ -171,6 +171,7 @@ final class RecordingViewModel: ObservableObject {
         if self.recordingState == .active {
             self.recordingState = .idle
             self.stopTimer()
+            RecordingOrientationController.unlock()
         }
         
         var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -322,6 +323,7 @@ final class RecordingViewModel: ObservableObject {
     // MARK: - Session Lifecycle
         
     private func beginRecordingSession(session: Session) {
+        RecordingOrientationController.lockToCurrentInterfaceOrientation()
         var session = session
         scheduleOriginalVideoDeletionIfNeeded(for: &session)
         self.shouldNavigateToClips = false
@@ -371,6 +373,7 @@ final class RecordingViewModel: ObservableObject {
         
         currentSession = session
         recordingState = .idle
+        RecordingOrientationController.unlock()
         stopTimer()
         
         cameraManager.stopMovieRecording()
@@ -400,6 +403,7 @@ final class RecordingViewModel: ObservableObject {
         cameraManager.stopMovieRecording()
         currentSession = nil
         recordingState = .idle
+        RecordingOrientationController.unlock()
         shouldNavigateToClips = false
     }
     
