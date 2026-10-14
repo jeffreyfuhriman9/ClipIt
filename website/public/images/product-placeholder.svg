@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 620" role="img" aria-labelledby="title desc">
+  <title id="title">ClipIt Button placeholder</title>
+  <desc id="desc">Abstract green circular object on a warm neutral background, not final product art.</desc>
+  <rect width="720" height="620" fill="#e7e1d5"/>
+  <path d="M91 461c80-143 149-254 284-303 101-37 184 34 213 123 35 107-33 223-143 261-120 41-266 8-354-81Z" fill="#d6f36b"/>
+  <circle cx="366" cy="309" r="151" fill="#1f5c45"/>
+  <circle cx="366" cy="309" r="118" fill="#f4f0e8" stroke="#143d2f" stroke-width="5"/>
+  <circle cx="366" cy="309" r="62" fill="#d96b4b"/>
+  <text x="360" y="565" text-anchor="middle" fill="#18231f" font-family="Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="3">PLACEHOLDER ART</text>
+</svg>

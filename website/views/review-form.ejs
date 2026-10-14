@@ -1,0 +1,29 @@
+<%- include('partials/head') %>
+
+<section class="review-form-page section-shell">
+  <div class="contact-intro">
+    <span class="eyebrow">Verified purchase</span>
+    <h1>Review <%= product.name %></h1>
+    <p>Your review will be marked “Verified Purchase.” Please share your honest experience. You can submit one review for this purchase.</p>
+  </div>
+  <form class="contact-form review-form" data-review-form enctype="multipart/form-data" novalidate>
+    <input type="hidden" name="token" value="<%= token %>">
+    <label>Name<input name="name" autocomplete="name" required maxlength="80"></label>
+    <fieldset class="rating-fieldset">
+      <legend>Rating</legend>
+      <div class="star-selector">
+        <% [5, 4, 3, 2, 1].forEach((rating) => { %><input id="rating-<%= rating %>" type="radio" name="rating" value="<%= rating %>" required><label for="rating-<%= rating %>"><span aria-hidden="true">★</span><span class="sr-only"><%= rating %> star<%= rating === 1 ? '' : 's' %></span></label><% }) %>
+      </div>
+    </fieldset>
+    <label>Review<textarea name="body" rows="7" required minlength="10" maxlength="5000"></textarea></label>
+    <label>Photos or videos (optional)<input data-review-media name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" multiple></label>
+    <p class="upload-help">Up to 5 files. Images: JPG, PNG, or WebP, up to 5 MB each. Videos: MP4 or WebM, up to 25 MB each. Add a short description for every upload.</p>
+    <div data-media-descriptions></div>
+    <label class="honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+    <p class="form-error" data-review-error hidden></p>
+    <p class="form-success" data-review-success hidden>Thanks—your verified review is now published.</p>
+    <button class="button" type="submit">Publish review</button>
+  </form>
+</section>
+
+<%- include('partials/footer') %>

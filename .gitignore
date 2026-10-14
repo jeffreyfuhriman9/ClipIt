@@ -1,1 +1,4 @@
 Secrets.plist
+.DS_Store
+ios/ClipIt.xcodeproj/xcuserdata/
+ios/DerivedData/

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="PLACEHOLDER: Add the approved ClipIt brand description.">
+    <meta name="theme-color" content="#003049">
+    <title><%= title %></title>
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/images/favicon-32.png" type="image/png" sizes="32x32">
+    <link rel="icon" href="/images/favicon-16.png" type="image/png" sizes="16x16">
+    <link rel="apple-touch-icon" href="/images/apple-touch-icon.png" sizes="180x180">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/store.js"></script>
+  </head>
+  <body data-page="<%= currentPath %>">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <div id="site-message" class="site-message" role="status" aria-live="polite" hidden></div>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="ClipIt home">
+        <picture class="brand-logo">
+          <source media="(max-width: 560px)" srcset="/images/clipit-logo-mark.png">
+          <img src="/images/clipit-logo.png" alt="ClipIt — Record. ClipIt. Relive.">
+        </picture>
+      </a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="/products" <%= currentPath.startsWith('/products') ? 'aria-current="page"' : '' %>>Shop</a>
+        <a href="/#companion-app">Companion app</a>
+        <a href="/contact" <%= currentPath === '/contact' ? 'aria-current="page"' : '' %>>Contact</a>
+        <a class="cart-link" href="/cart" <%= currentPath === '/cart' ? 'aria-current="page"' : '' %>>
+          Cart <span class="cart-count" data-cart-count aria-label="0 items">0</span>
+        </a>
+      </nav>
+    </header>
+    <main id="main-content">

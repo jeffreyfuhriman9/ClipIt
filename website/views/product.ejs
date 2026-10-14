@@ -1,0 +1,99 @@
+<%- include('partials/head') %>
+
+<section class="product-detail section-shell">
+  <div class="product-detail-art">
+    <div class="product-gallery" data-product-gallery data-gallery-images="<%= JSON.stringify(product.images) %>" tabindex="0" aria-label="Product photos. Use the arrow keys to change photos.">
+      <div class="gallery-stage">
+        <img data-gallery-main src="<%= product.images[0].src %>" alt="<%= product.images[0].alt %>" width="900" height="780">
+        <% if (product.images.length > 1) { %>
+          <button class="gallery-control gallery-previous" type="button" data-gallery-previous aria-label="Previous product photo">‹</button>
+          <button class="gallery-control gallery-next" type="button" data-gallery-next aria-label="Next product photo">›</button>
+        <% } %>
+      </div>
+      <% if (product.images.length > 1) { %>
+        <div class="gallery-thumbnails" aria-label="Choose a product photo">
+          <% product.images.forEach((image, index) => { %>
+            <button class="gallery-thumbnail" type="button" data-gallery-thumbnail data-gallery-index="<%= index %>" aria-label="Show product photo <%= index + 1 %>" <%= index === 0 ? 'aria-current="true"' : '' %>>
+              <img src="<%= image.src %>" alt="" width="120" height="104">
+            </button>
+          <% }) %>
+        </div>
+      <% } %>
+    </div>
+  </div>
+  <div class="product-detail-copy">
+    <% if (product.badge) { %><span class="eyebrow"><%= product.badge %></span><% } %>
+    <h1><%= product.name %></h1>
+    <a class="product-rating product-rating-detail" href="#reviews" aria-label="<%= reviewData.summary.count ? `${reviewData.summary.average.toFixed(1)} out of 5 stars from ${reviewData.summary.count} reviews. Read reviews below.` : 'Read product reviews below' %>">
+      <strong><%= reviewData.summary.count ? reviewData.summary.average.toFixed(1) : "—" %></strong>
+      <span class="star-display" aria-hidden="true"><%= "★".repeat(Math.round(reviewData.summary.average)) %><span><%= "☆".repeat(5 - Math.round(reviewData.summary.average)) %></span></span>
+      <span>(<%= reviewData.summary.count %> <%= reviewData.summary.count === 1 ? "review" : "reviews" %>)</span>
+    </a>
+    <p class="detail-price"><%= formatMoney(product.priceCents, product.currency) %> <small>placeholder price</small></p>
+    <p class="lede"><%= product.description %></p>
+    <form class="add-form" data-add-form="<%= product.id %>">
+      <label for="quantity">Quantity</label>
+      <select id="quantity" name="quantity">
+        <% for (let i = 1; i <= 10; i += 1) { %><option value="<%= i %>"><%= i %></option><% } %>
+      </select>
+      <button class="button button-wide" type="submit">Add to cart</button>
+    </form>
+    <div class="security-note">
+      <span aria-hidden="true">◇</span>
+      <p><strong>Secure checkout by Stripe</strong><br>Payment details are entered on Stripe’s hosted checkout page, not this site.</p>
+    </div>
+  </div>
+</section>
+
+<section class="product-information section-shell">
+  <div class="information-intro">
+    <span class="eyebrow">Features &amp; details</span>
+    <h2>What to know before you order.</h2>
+  </div>
+  <ul class="feature-list">
+    <% product.features.forEach((feature) => { %><li><%= feature %></li><% }) %>
+  </ul>
+</section>
+
+<section id="reviews" class="product-reviews section-shell" aria-labelledby="reviews-heading">
+  <div class="section-heading">
+    <div>
+      <span class="eyebrow">Customer reviews</span>
+      <h2 id="reviews-heading">Reviews from verified purchasers.</h2>
+    </div>
+  </div>
+  <div class="review-summary" aria-label="Review summary">
+    <div class="review-average">
+      <strong><%= reviewData.summary.count ? reviewData.summary.average.toFixed(1) : "—" %></strong>
+      <span class="star-display" aria-label="<%= reviewData.summary.count ? `${reviewData.summary.average.toFixed(1)} out of 5 stars` : 'No ratings yet' %>"><%= "★".repeat(Math.round(reviewData.summary.average)) %><span aria-hidden="true"><%= "☆".repeat(5 - Math.round(reviewData.summary.average)) %></span></span>
+      <span><%= reviewData.summary.count %> <%= reviewData.summary.count === 1 ? "review" : "reviews" %></span>
+    </div>
+    <div class="review-breakdown" aria-label="Rating breakdown">
+      <% [5, 4, 3, 2, 1].forEach((rating) => { const count = reviewData.summary.breakdown[rating]; const percent = reviewData.summary.count ? (count / reviewData.summary.count) * 100 : 0; %>
+        <div class="breakdown-row"><span><%= rating %> star</span><div class="breakdown-meter" aria-hidden="true"><i style="width: <%= percent %>%"></i></div><span><%= count %></span></div>
+      <% }) %>
+    </div>
+  </div>
+  <% if (!reviewData.reviews.length) { %>
+    <p class="no-reviews">No verified-purchase reviews yet. Customers receive a private review link after a completed purchase.</p>
+  <% } else { %>
+    <div class="verified-review-list">
+      <% reviewData.reviews.forEach((review) => { %>
+        <article class="verified-review">
+          <header>
+            <div>
+              <span class="star-display" aria-label="<%= review.rating %> out of 5 stars"><%= "★".repeat(review.rating) %><span aria-hidden="true"><%= "☆".repeat(5 - review.rating) %></span></span>
+              <strong><%= review.name %></strong>
+            </div>
+            <time datetime="<%= review.createdAt %>"><%= new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(review.createdAt)) %></time>
+          </header>
+          <span class="verified-badge">✓ Verified Purchase</span>
+          <p><%= review.body %></p>
+          <% if (review.media.length) { %><div class="review-media"><% review.media.forEach((media) => { %><% if (media.kind === 'image') { %><img src="<%= media.url %>" alt="<%= media.altText %>" loading="lazy"><% } else { %><div><video controls preload="metadata" aria-label="<%= media.altText %>"><source src="<%= media.url %>"></video><p class="media-description"><%= media.altText %></p></div><% } %><% }) %></div><% } %>
+        </article>
+      <% }) %>
+    </div>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

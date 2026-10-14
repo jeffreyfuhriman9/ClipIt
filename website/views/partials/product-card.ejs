@@ -1,0 +1,21 @@
+<article class="product-card">
+  <a class="product-image-link" href="/products/<%= product.slug %>" aria-label="View <%= product.name %>">
+    <img class="product-image" src="<%= product.image %>" alt="<%= product.imageAlt %>" width="720" height="620">
+  </a>
+  <div class="product-card-body">
+    <% if (product.badge) { %><span class="eyebrow"><%= product.badge %></span><% } %>
+    <h3><a href="/products/<%= product.slug %>"><%= product.name %></a></h3>
+    <p><%= product.shortDescription %></p>
+    <div class="product-card-actions">
+      <div>
+        <a class="product-rating" href="/products/<%= product.slug %>#reviews" aria-label="<%= reviewSummary.count ? `${reviewSummary.average.toFixed(1)} out of 5 stars from ${reviewSummary.count} reviews` : 'Read product reviews' %>">
+          <strong><%= reviewSummary.count ? reviewSummary.average.toFixed(1) : "—" %></strong>
+          <span class="star-display" aria-hidden="true"><%= "★".repeat(Math.round(reviewSummary.average)) %><span><%= "☆".repeat(5 - Math.round(reviewSummary.average)) %></span></span>
+          <span>(<%= reviewSummary.count %> <%= reviewSummary.count === 1 ? "review" : "reviews" %>)</span>
+        </a>
+        <span class="price"><%= formatMoney(product.priceCents, product.currency) %> <small>placeholder</small></span>
+      </div>
+      <button class="button button-small" type="button" data-add-to-cart="<%= product.id %>">Add to cart</button>
+    </div>
+  </div>
+</article>

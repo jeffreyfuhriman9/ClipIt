@@ -1,0 +1,47 @@
+<%- include('partials/head') %>
+
+<section class="page-intro section-shell cart-intro">
+  <span class="eyebrow">Your selection</span>
+  <h1>Shopping cart</h1>
+</section>
+
+<section class="section-shell cart-layout" data-cart-page>
+  <div id="cart-lines" class="cart-lines" aria-live="polite"></div>
+  <aside class="cart-summary">
+    <span class="eyebrow">Order summary</span>
+    <div class="summary-row"><span>Subtotal</span><strong id="cart-subtotal">$0.00</strong></div>
+    <p>Shipping and taxes, if configured, are calculated securely during Stripe Checkout.</p>
+    <button id="checkout-button" class="button button-wide" type="button">Continue to secure checkout</button>
+    <p id="checkout-error" class="form-error" role="alert" hidden></p>
+    <div class="security-note compact">
+      <span aria-hidden="true">◇</span>
+      <p>Checkout is hosted by Stripe. Card details never touch this server.</p>
+    </div>
+  </aside>
+</section>
+
+<template id="cart-line-template">
+  <article class="cart-line">
+    <img data-line-image src="" alt="" width="160" height="140">
+    <div class="cart-line-info">
+      <h2 data-line-name></h2>
+      <p data-line-price></p>
+      <div class="quantity-control">
+        <label>Quantity <input data-line-quantity type="number" min="1" max="10" inputmode="numeric"></label>
+        <button class="remove-button" data-line-remove type="button">Remove</button>
+      </div>
+    </div>
+    <strong data-line-total></strong>
+  </article>
+</template>
+
+<div id="empty-cart" class="empty-state section-shell" hidden>
+  <span class="empty-icon" aria-hidden="true">◇</span>
+  <h2>Your cart is ready for something good.</h2>
+  <p>Add a placeholder product to begin.</p>
+  <a class="button" href="/products">Browse products</a>
+</div>
+
+<script id="catalog-data" type="application/json"><%- JSON.stringify(products.map(({ id, slug, name, priceCents, currency, image, imageAlt }) => ({ id, slug, name, priceCents, currency, image, imageAlt }))).replace(/</g, '\\u003c') %></script>
+
+<%- include('partials/footer') %>

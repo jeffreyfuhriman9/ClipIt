@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 700" role="img" aria-labelledby="title desc">
+  <title id="title">Companion app screen placeholders</title>
+  <desc id="desc">Two generic phone screens illustrating where approved companion app screenshots can go.</desc>
+  <rect x="80" y="100" width="290" height="530" rx="48" fill="#143d2f" transform="rotate(-8 80 100)"/>
+  <rect x="107" y="128" width="236" height="464" rx="29" fill="#f4f0e8" transform="rotate(-8 107 128)"/>
+  <circle cx="236" cy="241" r="55" fill="#d96b4b"/>
+  <path d="M159 360h130M159 398h95M159 470h130M159 508h70" stroke="#1f5c45" stroke-width="16" stroke-linecap="round" transform="rotate(-8 224 430)"/>
+  <rect x="410" y="62" width="290" height="530" rx="48" fill="#18231f" transform="rotate(7 410 62)"/>
+  <rect x="437" y="90" width="236" height="464" rx="29" fill="#fffdf7" transform="rotate(7 437 90)"/>
+  <path d="M481 245c55-73 114-61 151 3-31 73-106 97-151-3Z" fill="#d6f36b" transform="rotate(7 556 270)"/>
+  <path d="M488 377h130M488 415h95M488 487h130" stroke="#1f5c45" stroke-width="16" stroke-linecap="round" transform="rotate(7 553 432)"/>
+  <text x="390" y="670" text-anchor="middle" fill="#18231f" font-family="Arial, sans-serif" font-size="17" font-weight="700" letter-spacing="3">PLACEHOLDER APP SCREENS</text>
+</svg>

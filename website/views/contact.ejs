@@ -1,0 +1,38 @@
+<%- include('partials/head') %>
+
+<section class="contact-page section-shell">
+  <div class="contact-intro">
+    <span class="eyebrow">Contact ClipIt</span>
+    <h1>We’d love to hear from you.</h1>
+    <p class="lede">Have a question about ClipIt? Send a message and our team will reply by email.</p>
+  </div>
+
+  <form class="contact-form" data-contact-form novalidate>
+    <div class="form-grid">
+      <label>
+        Name
+        <input name="name" type="text" autocomplete="name" maxlength="100" required>
+      </label>
+      <label>
+        Email
+        <input name="email" type="email" autocomplete="email" maxlength="254" required>
+      </label>
+    </div>
+    <label>
+      Subject
+      <input name="subject" type="text" maxlength="160" required>
+    </label>
+    <label>
+      Message
+      <textarea name="message" rows="7" maxlength="5000" required></textarea>
+    </label>
+    <div class="honeypot" aria-hidden="true">
+      <label>Website <input name="website" type="text" tabindex="-1" autocomplete="off"></label>
+    </div>
+    <button class="button" type="submit">Send message</button>
+    <p class="form-error" data-contact-error role="alert" hidden></p>
+    <p class="form-success" data-contact-success role="status" hidden>Thanks—your message has been sent. We’ll reply to the email you provided.</p>
+  </form>
+</section>
+
+<%- include('partials/footer') %>

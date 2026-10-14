@@ -1,0 +1,14 @@
+<%- include('partials/head') %>
+
+<section class="status-page section-shell" data-checkout-status="<%= status %>">
+  <span class="status-icon" aria-hidden="true"><%= status === 'paid' ? '✓' : status === 'canceled' ? '←' : '…' %></span>
+  <span class="eyebrow"><%= status === 'paid' ? 'Payment confirmed' : status === 'canceled' ? 'Checkout canceled' : 'Payment status' %></span>
+  <h1><%= status === 'paid' ? 'Thank you for your order.' : status === 'canceled' ? 'Your cart is still waiting.' : 'We’re checking your payment.' %></h1>
+  <p class="lede"><%= message %></p>
+  <div class="button-row centered">
+    <a class="button" href="<%= status === 'paid' ? '/products' : '/cart' %>"><%= status === 'paid' ? 'Continue shopping' : 'Return to cart' %></a>
+    <a class="text-link" href="/">Back home <span aria-hidden="true">→</span></a>
+  </div>
+</section>
+
+<%- include('partials/footer') %>
