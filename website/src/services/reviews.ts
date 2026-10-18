@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import type { S3Client } from "@aws-sdk/client-s3";
 import { fileTypeFromBuffer } from "file-type";
 import { Pool } from "pg";
 import nodemailer from "nodemailer";
@@ -38,17 +38,26 @@ function tokenHash(token: string) {
 
 export class ReviewStore {
   private readonly pool: Pool;
-  private readonly s3: S3Client;
+  private s3?: S3Client;
+  private s3Module?: Promise<typeof import("@aws-sdk/client-s3")>;
   private initialized?: Promise<void>;
 
   constructor(private readonly config: NonNullable<AppConfig["reviews"]>) {
     this.pool = new Pool({ connectionString: config.databaseUrl, ssl: { rejectUnauthorized: true } });
-    this.s3 = new S3Client({
-      region: config.media.region,
-      endpoint: config.media.endpoint,
+  }
+
+  private async getS3() {
+    // Do not load the large AWS SDK during ordinary storefront startup. Reviews
+    // are optional, and this keeps browsing/checkout independent of media storage.
+    this.s3Module ??= import("@aws-sdk/client-s3");
+    const module = await this.s3Module;
+    this.s3 ??= new module.S3Client({
+      region: this.config.media.region,
+      endpoint: this.config.media.endpoint,
       forcePathStyle: false,
-      credentials: { accessKeyId: config.media.accessKeyId, secretAccessKey: config.media.secretAccessKey }
+      credentials: { accessKeyId: this.config.media.accessKeyId, secretAccessKey: this.config.media.secretAccessKey }
     });
+    return { client: this.s3, PutObjectCommand: module.PutObjectCommand };
   }
 
   private async ensureSchema() {
@@ -155,7 +164,8 @@ export class ReviewStore {
       const key = `reviews/${claim.productId}/${randomUUID()}.${allowed.extension}`;
       prepared.push({ key, url: `${this.config.media.publicBaseUrl}/${key}`, kind: allowed.kind, altText: upload.altText, buffer: upload.buffer, contentType: type.mime });
     }
-    for (const item of prepared) await this.s3.send(new PutObjectCommand({ Bucket: this.config.media.bucket, Key: item.key, Body: item.buffer, ContentType: item.contentType, CacheControl: "public, max-age=31536000, immutable" }));
+    const s3 = await this.getS3();
+    for (const item of prepared) await s3.client.send(new s3.PutObjectCommand({ Bucket: this.config.media.bucket, Key: item.key, Body: item.buffer, ContentType: item.contentType, CacheControl: "public, max-age=31536000, immutable" }));
     await this.ensureSchema();
     const client = await this.pool.connect();
     try {

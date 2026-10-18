@@ -15,10 +15,20 @@ enum RecordingState {
     case paused
 }
 
+private struct PendingRecordingRecovery: Codable {
+    var session: Session
+    var movieURL: URL
+}
+
 enum RecoveredClipResult {
-    case saved
+    case saved(clipID: UUID)
     case retryLater
     case noRecording
+}
+
+struct RecoveredClipBatch: Equatable {
+    let id = UUID()
+    let clipNumbers: [Int]
 }
 
 @MainActor
@@ -27,6 +37,7 @@ final class RecordingViewModel: ObservableObject {
     // MARK: - Published
     @Published var recordingState: RecordingState = .idle
     @Published private(set) var cameraConfirmedRecording = false
+    @Published private(set) var isFinalizingRecording = false
     @Published var currentSession: Session?
     @Published var sessions: [Session] = []
     @Published private(set) var hasLoadedSessions = false
@@ -39,6 +50,8 @@ final class RecordingViewModel: ObservableObject {
     @Published var localStoreSize: String = "Calculating…"
     @Published var isProcessingWatermark: Bool = false
     @Published private(set) var latestTriggeredClip: Clip?
+    @Published private(set) var latestClipWasRecovered = false
+    @Published private(set) var recoveredClipBatch: RecoveredClipBatch?
     
     @Published var selectedVideoQuality: CameraManager.VideoQuality = .hd1080p
     
@@ -74,6 +87,8 @@ final class RecordingViewModel: ObservableObject {
     private var pendingFullSessionID: UUID?
     private var pendingHighlightClips: [Clip] = []
     private var recoveredExtractionSessions = Set<UUID>()
+    private var recoveredClipIDsAwaitingConfirmation = Set<UUID>()
+    private var recoveredClipBatchTask: DispatchWorkItem?
     private let metadataWriteQueue = DispatchQueue(label: "com.clipit.sessions-metadata-write")
     
     // MARK: - Persistence
@@ -81,6 +96,13 @@ final class RecordingViewModel: ObservableObject {
     private var sessionsMetadataURL: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("sessions.json")
+    }
+
+    /// Written before recording begins, so an unexpectedly terminated app can
+    /// restore a completed raw movie instead of leaving it orphaned on disk.
+    private var pendingRecordingRecoveryURL: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("pending-recording-recovery.json")
     }
     
     // MARK: - Init
@@ -91,7 +113,9 @@ final class RecordingViewModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             
-            let loaded = await self.performDiskLoadingSequence()
+            var loaded = await self.performDiskLoadingSequence()
+            await self.recoverPendingRecording(into: &loaded)
+            await self.recoverOrphanedSessionMovies(into: &loaded)
             self.sessions = loaded
             self.hasLoadedSessions = true
             
@@ -131,6 +155,12 @@ final class RecordingViewModel: ObservableObject {
                 self.cameraConfirmedRecording = true
                 self.sessionStart = Date()
                 self.currentSession?.videoStartedAt = self.sessionStart
+                if let session = self.currentSession, let url = self.pendingMovieURL(for: session) {
+                    self.persistPendingRecording(session: session, movieURL: url)
+                }
+                RecordingDiagnostics.shared.log("recording_confirmed_by_camera", details: [
+                    "sessionID": self.currentSession?.id.uuidString ?? "unknown"
+                ])
                 self.startTimer()
             }
             .store(in: &cancellables)
@@ -163,7 +193,7 @@ final class RecordingViewModel: ObservableObject {
             return
         }
         
-        print("🎥 AVCaptureSession interrupted. Reason code: \(reason.rawValue)")
+        RecordingDiagnostics.shared.log("recording_view_model_interruption", details: ["reason": reason.rawValue])
         
         switch reason {
         case .videoDeviceInUseByAnotherClient, .audioDeviceInUseByAnotherClient:
@@ -187,6 +217,7 @@ final class RecordingViewModel: ObservableObject {
     private func handleIncomingMovieFile(url: URL) {
         guard var session = currentSession else { return }
         cameraConfirmedRecording = false
+        isFinalizingRecording = false
         
         if self.recordingState == .active {
             self.recordingState = .idle
@@ -213,11 +244,17 @@ final class RecordingViewModel: ObservableObject {
         )
         
         session.clips = [fullClip] + pendingHighlightClips
+        normalizeHighlightIndices(in: &session.clips)
         session.isProcessing = true
         
         self.sessions.insert(session, at: 0)
         self.currentSession = nil
         self.saveSessionsToDisk()
+        self.clearPendingRecordingRecovery()
+        RecordingDiagnostics.shared.log("recording_saved_to_library", details: [
+            "sessionID": session.id.uuidString,
+            "filename": url.lastPathComponent
+        ])
         
         let highlightsToProcess = session.highlights
         let initialHighlightIDs = Set(highlightsToProcess.map(\.id))
@@ -258,6 +295,7 @@ final class RecordingViewModel: ObservableObject {
                                     $0.highlightIndex != nil && !initialHighlightIDs.contains($0.id)
                                 }
                                 self.sessions[sessionIndex].clips = [fullClip] + processedHighlights + recovered
+                                self.normalizeHighlightIndices(in: &self.sessions[sessionIndex].clips)
                             }
                             
                             self.currentExtractionProgress = index + 1
@@ -281,6 +319,7 @@ final class RecordingViewModel: ObservableObject {
                 $0.highlightIndex != nil && !processedIDs.contains($0.id)
             }
             self.sessions[index].clips = finalClips + recovered
+            self.normalizeHighlightIndices(in: &self.sessions[index].clips)
             self.sessions[index].isProcessing = false
         }
         
@@ -303,9 +342,17 @@ final class RecordingViewModel: ObservableObject {
 
     /// A transient gap while restoring the library or finishing a movie must
     /// not make the phone permanently reject a buffered button tap.
-    func registerRecoveredButtonClip(at pressedAt: Date) -> RecoveredClipResult {
+    func registerRecoveredButtonClip(
+        at pressedAt: Date,
+        isBufferedDuringDisconnect: Bool
+    ) -> RecoveredClipResult {
         guard hasLoadedSessions else { return .retryLater }
-        if triggerClip(at: pressedAt) { return .saved }
+        if let clip = triggerClip(
+            at: pressedAt,
+            isRecoveredButtonTap: isBufferedDuringDisconnect
+        ) {
+            return .saved(clipID: clip.id)
+        }
 
         let matches: (Session) -> Bool = { session in
             let start = session.videoStartedAt ?? session.startedAt
@@ -322,12 +369,15 @@ final class RecordingViewModel: ObservableObject {
     }
 
     /// Place a button tap at its original time, including after the recording
-    /// has ended. Returns false if there is no retained video for that time.
+    /// has ended. Returns nil if there is no retained video for that time.
     @discardableResult
-    func triggerClip(at pressedAt: Date) -> Bool {
+    func triggerClip(
+        at pressedAt: Date,
+        isRecoveredButtonTap: Bool = false
+    ) -> Clip? {
         let now = Date()
         guard pressedAt <= now.addingTimeInterval(0.5),
-              pressedAt >= now.addingTimeInterval(-48 * 60 * 60) else { return false }
+              pressedAt >= now.addingTimeInterval(-48 * 60 * 60) else { return nil }
 
         if let session = currentSession,
            let start = session.videoStartedAt ?? sessionStart,
@@ -339,12 +389,14 @@ final class RecordingViewModel: ObservableObject {
             let clip = makeHighlight(sessionID: session.id, at: pressedAt,
                                      offset: offset, index: nextIndex)
             pendingHighlightClips.append(clip)
+            let normalizedIndices = normalizeHighlightIndices(in: &pendingHighlightClips)
             currentSession?.clips = pendingHighlightClips
             if recordingState == .active {
-                clipCount = nextIndex
-                latestTriggeredClip = clip
+                clipCount = normalizedIndices[clip.id] ?? nextIndex
+                latestTriggeredClip = pendingHighlightClips.first(where: { $0.id == clip.id })
+                latestClipWasRecovered = isRecoveredButtonTap
             }
-            return true
+            return pendingHighlightClips.first(where: { $0.id == clip.id })
         }
 
         guard let index = sessions.firstIndex(where: { session in
@@ -352,7 +404,7 @@ final class RecordingViewModel: ObservableObject {
             return pressedAt >= start.addingTimeInterval(-0.5) &&
                 pressedAt <= (session.endedAt ?? start).addingTimeInterval(0.5)
         }), let source = sessions[index].fullVideoURL,
-              FileManager.default.fileExists(atPath: source.path) else { return false }
+              FileManager.default.fileExists(atPath: source.path) else { return nil }
 
         let session = sessions[index]
         let start = session.videoStartedAt ?? session.startedAt
@@ -361,9 +413,10 @@ final class RecordingViewModel: ObservableObject {
                                  offset: max(0, pressedAt.timeIntervalSince(start)),
                                  index: nextIndex)
         sessions[index].clips.append(clip)
+        normalizeHighlightIndices(in: &sessions[index].clips)
         saveSessionsToDisk()
         if !session.isProcessing { extractRecoveredHighlights(sessionID: session.id) }
-        return true
+        return sessions[index].clips.first(where: { $0.id == clip.id })
     }
 
     private func makeHighlight(sessionID: UUID, at date: Date,
@@ -377,6 +430,37 @@ final class RecordingViewModel: ObservableObject {
                     sourceStartTime: max(0, offset - before),
                     sourceEndTime: offset + after,
                     beforeSeconds: before, afterSeconds: after)
+    }
+
+    /// BLE recovery deliberately delivers buffered presses independently so a
+    /// missed acknowledgment cannot block later presses. That delivery order
+    /// is not necessarily chronological, so the visible Clip # is always
+    /// derived from the original button-press time instead.
+    @discardableResult
+    private func normalizeHighlightIndices(in clips: inout [Clip]) -> [UUID: Int] {
+        let primaryHighlightPositions = clips.indices.filter { index in
+            let clip = clips[index]
+            return clip.highlightIndex != nil && !clip.isReel && !clip.isSecondaryAngle
+        }
+        let orderedPositions = primaryHighlightPositions.sorted { lhs, rhs in
+            let left = clips[lhs]
+            let right = clips[rhs]
+            if left.triggeredAt != right.triggeredAt {
+                return left.triggeredAt < right.triggeredAt
+            }
+            if left.offsetInSession != right.offsetInSession {
+                return left.offsetInSession < right.offsetInSession
+            }
+            return left.id.uuidString < right.id.uuidString
+        }
+
+        var assignedIndices: [UUID: Int] = [:]
+        for (offset, position) in orderedPositions.enumerated() {
+            let number = offset + 1
+            clips[position].highlightIndex = number
+            assignedIndices[clips[position].id] = number
+        }
+        return assignedIndices
     }
 
     private func extractRecoveredHighlights(sessionID: UUID) {
@@ -411,6 +495,33 @@ final class RecordingViewModel: ObservableObject {
         )
     }
 
+    /// Buffered button taps arrive after a reconnect. Delay the confirmation
+    /// slightly so a whole recovered batch is presented as one message rather
+    /// than a confusing burst of individual banners.
+    func queueRecoveredClipConfirmation(for clipID: UUID) {
+        recoveredClipIDsAwaitingConfirmation.insert(clipID)
+        recoveredClipBatchTask?.cancel()
+        let task = DispatchWorkItem { [weak self] in
+            self?.publishRecoveredClipConfirmation()
+        }
+        recoveredClipBatchTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: task)
+    }
+
+    private func publishRecoveredClipConfirmation() {
+        let pendingIDs = recoveredClipIDsAwaitingConfirmation
+        recoveredClipIDsAwaitingConfirmation.removeAll()
+        guard !pendingIDs.isEmpty else { return }
+
+        let allClips = pendingHighlightClips + sessions.flatMap(\.clips)
+        let numbers = allClips
+            .filter { pendingIDs.contains($0.id) }
+            .compactMap(\.highlightIndex)
+            .sorted()
+        guard !numbers.isEmpty else { return }
+        recoveredClipBatch = RecoveredClipBatch(clipNumbers: numbers)
+    }
+
     func favoriteLatestTriggeredClip() {
         guard let latest = latestTriggeredClip,
               let pendingIndex = pendingHighlightClips.firstIndex(where: { $0.id == latest.id }) else { return }
@@ -429,24 +540,39 @@ final class RecordingViewModel: ObservableObject {
     // MARK: - Session Lifecycle
         
     private func beginRecordingSession(session: Session) {
+        guard recordingState == .idle, currentSession == nil, !isFinalizingRecording else {
+            RecordingDiagnostics.shared.log("recording_start_ignored", details: [
+                "state": String(describing: recordingState),
+                "isFinalizing": isFinalizingRecording
+            ])
+            return
+        }
         RecordingOrientationController.lockToCurrentInterfaceOrientation()
         var session = session
         scheduleOriginalVideoDeletionIfNeeded(for: &session)
         self.shouldNavigateToClips = false
+        let url = fullSessionURL(for: session)
+        session.fullVideoURL = url
         self.currentSession = session
         self.clipCount = 0
         self.elapsedTime = 0
         self.cameraConfirmedRecording = false
         self.recordingState = .active
         self.pendingHighlightClips = []
+        self.latestClipWasRecovered = false
+        self.isFinalizingRecording = false
         
         bufferManager.bufferSeconds = bufferLengthSeconds
         bufferManager.postRollSeconds = postRollSeconds
         
         bufferManager.startBuffering(mode: .fullSession, cameraManager: cameraManager)
         
-        let url = fullSessionURL(for: session)
         pendingFullSessionID = session.id
+        persistPendingRecording(session: session, movieURL: url)
+        RecordingDiagnostics.shared.log("recording_session_created", details: [
+            "sessionID": session.id.uuidString,
+            "filename": url.lastPathComponent
+        ])
         cameraManager.startMovieRecording(to: url)
     }
 
@@ -473,6 +599,7 @@ final class RecordingViewModel: ObservableObject {
     }
     
     func requestStartSession() {
+        guard recordingState == .idle, currentSession == nil, !isFinalizingRecording else { return }
         var session = Session(mode: .fullSession)
         session.name = Date().defaultSessionName
         
@@ -480,7 +607,7 @@ final class RecordingViewModel: ObservableObject {
     }
     
     func endSession(navigateToClips: Bool = false) {
-        guard var session = currentSession else { return }
+        guard var session = currentSession, recordingState == .active, !isFinalizingRecording else { return }
         session.endedAt = Date()
         session.isProcessing = true
         session.clips = pendingHighlightClips
@@ -488,9 +615,17 @@ final class RecordingViewModel: ObservableObject {
         currentSession = session
         cameraConfirmedRecording = false
         recordingState = .idle
+        isFinalizingRecording = true
         RecordingOrientationController.unlock()
         stopTimer()
         
+        if let url = session.fullVideoURL {
+            persistPendingRecording(session: session, movieURL: url)
+        }
+        RecordingDiagnostics.shared.log("recording_session_stop_requested", details: [
+            "sessionID": session.id.uuidString,
+            "durationSeconds": session.duration
+        ])
         cameraManager.stopMovieRecording()
         
         if navigateToClips {
@@ -507,9 +642,26 @@ final class RecordingViewModel: ObservableObject {
         pendingFullSessionID = nil
         pendingHighlightClips.removeAll()
         latestTriggeredClip = nil
+        latestClipWasRecovered = false
+        isFinalizingRecording = false
         recordingState = .idle
         RecordingOrientationController.unlock()
         shouldNavigateToClips = false
+        clearPendingRecordingRecovery()
+    }
+
+    /// A true failure is retained for recovery rather than silently discarded.
+    /// The raw file and pending manifest remain available for inspection.
+    func handleCameraRecordingFailure(_ reason: String) {
+        cameraConfirmedRecording = false
+        isFinalizingRecording = false
+        recordingState = .idle
+        stopTimer()
+        RecordingOrientationController.unlock()
+        RecordingDiagnostics.shared.log("recording_unplayable_failure", details: [
+            "reason": reason,
+            "sessionID": currentSession?.id.uuidString ?? "unknown"
+        ])
     }
     
     // MARK: - Helpers
@@ -559,6 +711,122 @@ final class RecordingViewModel: ObservableObject {
         let documentsDirectory = paths[0]
         let uniqueFilename = "session_\(session.id.uuidString).mov"
         return documentsDirectory.appendingPathComponent(uniqueFilename)
+    }
+
+    private func pendingMovieURL(for session: Session) -> URL? {
+        session.fullVideoURL ?? fullSessionURL(for: session)
+    }
+
+    private func persistPendingRecording(session: Session, movieURL: URL) {
+        let record = PendingRecordingRecovery(session: session, movieURL: movieURL)
+        guard let data = try? JSONEncoder().encode(record) else { return }
+        do {
+            try data.write(to: pendingRecordingRecoveryURL, options: .atomic)
+        } catch {
+            RecordingDiagnostics.shared.log("pending_recording_manifest_write_failed", details: [
+                "error": error.localizedDescription
+            ])
+        }
+    }
+
+    private func clearPendingRecordingRecovery() {
+        guard FileManager.default.fileExists(atPath: pendingRecordingRecoveryURL.path) else { return }
+        try? FileManager.default.removeItem(at: pendingRecordingRecoveryURL)
+    }
+
+    private func recoverPendingRecording(into sessions: inout [Session]) async {
+        guard FileManager.default.fileExists(atPath: pendingRecordingRecoveryURL.path),
+              let data = try? Data(contentsOf: pendingRecordingRecoveryURL),
+              var pending = try? JSONDecoder().decode(PendingRecordingRecovery.self, from: data) else { return }
+
+        guard !sessions.contains(where: { $0.id == pending.session.id }) else {
+            clearPendingRecordingRecovery()
+            return
+        }
+
+        let asset = AVURLAsset(url: pending.movieURL)
+        let duration: Double
+        let isValid: Bool
+        do {
+            async let loadedDuration = asset.load(.duration)
+            async let isPlayable = asset.load(.isPlayable)
+            async let videoTracks = asset.loadTracks(withMediaType: .video)
+            let (assetDuration, playable, tracks) = try await (loadedDuration, isPlayable, videoTracks)
+            duration = assetDuration.seconds
+            isValid = FileManager.default.fileExists(atPath: pending.movieURL.path) &&
+                playable && duration.isFinite && duration > 0 && !tracks.isEmpty
+        } catch {
+            duration = 0
+            isValid = false
+        }
+        guard isValid else {
+            RecordingDiagnostics.shared.log("pending_recording_recovery_waiting", details: [
+                "filename": pending.movieURL.lastPathComponent
+            ])
+            return
+        }
+
+        pending.session.fullVideoURL = pending.movieURL
+        pending.session.endedAt = pending.session.endedAt ?? pending.session.startedAt.addingTimeInterval(duration)
+        pending.session.isProcessing = false
+        let fullClip = Clip(sessionID: pending.session.id, offsetInSession: 0,
+                            fileURL: pending.movieURL, duration: duration, highlightIndex: nil)
+        pending.session.clips.removeAll { $0.highlightIndex == nil && !$0.isReel }
+        pending.session.clips.insert(fullClip, at: 0)
+        normalizeHighlightIndices(in: &pending.session.clips)
+        sessions.insert(pending.session, at: 0)
+        clearPendingRecordingRecovery()
+        RecordingDiagnostics.shared.log("pending_recording_recovered", details: [
+            "sessionID": pending.session.id.uuidString,
+            "filename": pending.movieURL.lastPathComponent,
+            "durationSeconds": duration
+        ])
+    }
+
+    /// Older builds did not retain a pending-session manifest. Scan only the
+    /// app's own UUID-backed raw-movie names so any playable orphan (including
+    /// a movie produced alongside a completion error) is visible in Library.
+    private func recoverOrphanedSessionMovies(into sessions: inout [Session]) async {
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let knownFiles = Set(sessions.compactMap(\.fullVideoURL).map(\.standardizedFileURL))
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: documentsURL,
+            includingPropertiesForKeys: [.creationDateKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+
+        for url in files where url.pathExtension.lowercased() == "mov" &&
+            url.lastPathComponent.hasPrefix("session_") &&
+            !knownFiles.contains(url.standardizedFileURL) {
+            let asset = AVURLAsset(url: url)
+            let duration: Double
+            do {
+                async let loadedDuration = asset.load(.duration)
+                async let isPlayable = asset.load(.isPlayable)
+                async let videoTracks = asset.loadTracks(withMediaType: .video)
+                let (assetDuration, playable, tracks) = try await (loadedDuration, isPlayable, videoTracks)
+                duration = assetDuration.seconds
+                guard playable, duration.isFinite, duration > 0, !tracks.isEmpty else { continue }
+            } catch {
+                continue
+            }
+
+            let creationDate = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date()
+            var session = Session(mode: .fullSession, startedAt: creationDate)
+            session.name = "Recovered Recording - \(creationDate.defaultSessionName.replacingOccurrences(of: "New Recording - ", with: ""))"
+            session.videoStartedAt = creationDate
+            session.endedAt = creationDate.addingTimeInterval(duration)
+            session.fullVideoURL = url
+            session.isProcessing = false
+            session.clips = [Clip(sessionID: session.id, offsetInSession: 0,
+                                  fileURL: url, duration: duration, highlightIndex: nil)]
+            sessions.insert(session, at: 0)
+            RecordingDiagnostics.shared.log("orphan_recording_recovered", details: [
+                "sessionID": session.id.uuidString,
+                "filename": url.lastPathComponent,
+                "durationSeconds": duration
+            ])
+        }
     }
     
     func saveSessionsToDisk() {
@@ -706,6 +974,7 @@ final class RecordingViewModel: ObservableObject {
             newClip.highlightIndex = nextHighlightIndex
             sessions[sessionIndex].clips.append(newClip)
         }
+        normalizeHighlightIndices(in: &sessions[sessionIndex].clips)
         
         if currentSession?.id == clip.sessionID {
             currentSession = sessions[sessionIndex]
@@ -713,6 +982,11 @@ final class RecordingViewModel: ObservableObject {
         
         saveSessionsToDisk()
         updateStorageSize()
+    }
+
+    func nextHighlightIndex(for sessionID: UUID) -> Int {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return 1 }
+        return (session.clips.compactMap(\.highlightIndex).max() ?? 0) + 1
     }
     
     private func validateLoadedSessions() {
@@ -735,6 +1009,12 @@ final class RecordingViewModel: ObservableObject {
                         needsResave = true
                     }
                 }
+            }
+
+            let indicesBeforeNormalization = sessions[i].clips.map { $0.highlightIndex }
+            normalizeHighlightIndices(in: &sessions[i].clips)
+            if sessions[i].clips.map({ $0.highlightIndex }) != indicesBeforeNormalization {
+                needsResave = true
             }
         }
 

@@ -3,7 +3,7 @@ services:
     name: clipit-store
     runtime: node
     plan: starter
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm start
     healthCheckPath: /health
     autoDeploy: true
@@ -42,6 +42,12 @@ services:
         sync: false
       - key: CONTACT_TO_EMAIL
         value: support@clipitbutton.com
+      # Private fulfillment dashboard. Point this at a Render Postgres database
+      # and choose a unique 24+ character password in the Render dashboard.
+      - key: ORDER_DATABASE_URL
+        sync: false
+      - key: FULFILLMENT_ADMIN_PASSWORD
+        sync: false
       # Verified reviews: configure these after creating Render Postgres and an
       # S3-compatible review-media bucket/CDN. Keep values secret in Render.
       - key: DATABASE_URL

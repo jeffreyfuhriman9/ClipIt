@@ -31,6 +31,8 @@ const envSchema = z.object({
     z.string().min(3).optional()
   ),
   CONTACT_TO_EMAIL: z.string().email().default("support@clipitbutton.com"),
+  ORDER_DATABASE_URL: optionalText,
+  FULFILLMENT_ADMIN_PASSWORD: optionalText,
   DATABASE_URL: optionalText,
   REVIEW_MEDIA_BUCKET: optionalText,
   REVIEW_MEDIA_REGION: z.string().default("auto"),
@@ -77,6 +79,10 @@ export type AppConfig = {
     from: string;
   };
   contactToEmail: string;
+  orders?: {
+    databaseUrl: string;
+    adminPassword: string;
+  };
   reviews?: {
     databaseUrl: string;
     media: {
@@ -123,6 +129,16 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     );
   }
 
+  const orderValues = [parsed.data.ORDER_DATABASE_URL, parsed.data.FULFILLMENT_ADMIN_PASSWORD];
+  if (orderValues.some(Boolean) && !orderValues.every(Boolean)) {
+    throw new Error(
+      "Configure both ORDER_DATABASE_URL and FULFILLMENT_ADMIN_PASSWORD, or omit both to keep fulfillment disabled."
+    );
+  }
+  if (parsed.data.FULFILLMENT_ADMIN_PASSWORD && parsed.data.FULFILLMENT_ADMIN_PASSWORD.length < 24) {
+    throw new Error("FULFILLMENT_ADMIN_PASSWORD must be at least 24 characters.");
+  }
+
   const reviewValues = [
     parsed.data.DATABASE_URL,
     parsed.data.REVIEW_MEDIA_BUCKET,
@@ -157,6 +173,12 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
         }
       : undefined,
     contactToEmail: parsed.data.CONTACT_TO_EMAIL,
+    orders: orderValues.every(Boolean)
+      ? {
+          databaseUrl: parsed.data.ORDER_DATABASE_URL!,
+          adminPassword: parsed.data.FULFILLMENT_ADMIN_PASSWORD!
+        }
+      : undefined,
     reviews: reviewValues.every(Boolean)
       ? {
           databaseUrl: parsed.data.DATABASE_URL!,

@@ -17,6 +17,7 @@ struct ClipPagerView: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var selectedClipID: UUID
+    @State private var pagedClips: [Clip]
     // Keep this state at the pager level so a horizontal swipe does not bring
     // the controls back after the viewer intentionally hid them.
     @State private var areControlsVisible = true
@@ -42,6 +43,7 @@ struct ClipPagerView: View {
         self.onTrimSaved = onTrimSaved
         self.onRename = onRename
         _selectedClipID = State(initialValue: initialClipID)
+        _pagedClips = State(initialValue: clips)
     }
     
     private var backdropOpacity: Double {
@@ -73,7 +75,7 @@ struct ClipPagerView: View {
 
             // Paging Horizontal View
             TabView(selection: $selectedClipID) {
-                ForEach(clips) { clip in
+                ForEach(pagedClips) { clip in
                     ClipPlayerContainer(
                         clip: clip,
                         isActive: clip.id == selectedClipID,
@@ -85,7 +87,7 @@ struct ClipPagerView: View {
                                 isCurrentClipInteractionLocked = isLocked
                             }
                         },
-                        onDelete: { onDelete(clip) },
+                        onDelete: { deleteAndAdvance(from: clip) },
                         onTrimSaved: onTrimSaved,
                         onRename: { newName in onRename(clip, newName) }
                     )
@@ -151,6 +153,32 @@ struct ClipPagerView: View {
             stopCurrentPlayback()
         }
     }
+
+    private func deleteAndAdvance(from clip: Clip) {
+        guard let index = pagedClips.firstIndex(where: { $0.id == clip.id }) else { return }
+        let nextClip = pagedClips.indices.contains(index + 1)
+            ? pagedClips[index + 1]
+            : (index > 0 ? pagedClips[index - 1] : nil)
+
+        if let nextClip {
+            // Switch the pager away from the clip before its file is removed
+            // from the library. Removing the file first briefly left the old
+            // player alive with no AVPlayer, exposing its unavailable state.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                selectedClipID = nextClip.id
+                pagedClips.remove(at: index)
+            }
+            DispatchQueue.main.async {
+                onDelete(clip)
+            }
+        } else {
+            stopCurrentPlayback()
+            onDelete(clip)
+            dismiss()
+        }
+    }
 }
 
 // MARK: - Container for Pager
@@ -205,7 +233,9 @@ struct ClipPlayerView: View {
     @State private var showRenameAlert = false
     @State private var editedTitle = ""
     @State private var showDeletionWarning = false
+    @State private var editUnavailableMessage = ""
     @State private var wasPlayingBeforeBackground = false
+    @State private var controlsAutoHideTask: Task<Void, Never>?
     // The root player deliberately fills the entire display, so SwiftUI's
     // GeometryReader sees zero safe-area insets. These values come from the
     // UIKit player view instead and remain correct around the Dynamic Island,
@@ -300,9 +330,22 @@ struct ClipPlayerView: View {
         .statusBarHidden(true)
         .onAppear {
             playerVM.setActive(isActive)
+            scheduleControlsAutoHideIfNeeded()
         }
         .onChange(of: isActive) { _, nowActive in
             playerVM.setActive(nowActive)
+            if nowActive {
+                scheduleControlsAutoHideIfNeeded()
+            } else {
+                controlsAutoHideTask?.cancel()
+            }
+        }
+        .onChange(of: playerVM.isPlaying) { _, isPlaying in
+            if isPlaying {
+                scheduleControlsAutoHideIfNeeded()
+            } else {
+                controlsAutoHideTask?.cancel()
+            }
         }
         .onChange(of: scenePhase, performActionOnPhaseChange)
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DidFinishImportingVideo"))) { _ in
@@ -310,6 +353,9 @@ struct ClipPlayerView: View {
         }
         .onChange(of: clip) { _, newClip in
             playerVM.updateCurrentClip(newClip, newVideoURL: videoURL)
+        }
+        .onDisappear {
+            controlsAutoHideTask?.cancel()
         }
         .modifier(ClipPlayerSheetsAndCoversModifier(
             videoURL: videoURL,
@@ -328,13 +374,13 @@ struct ClipPlayerView: View {
             showRenameAlert: $showRenameAlert,
             showDeleteConfirmation: $showDeleteConfirmation,
             showDeletionWarning: $showDeletionWarning,
+            editUnavailableMessage: editUnavailableMessage,
             deleteAlertTitle: deleteAlertTitle,
             deleteAlertMessage: deleteAlertMessage,
             playerVM: playerVM,
             onRename: onRename,
             onTrimSaved: onTrimSaved,
-            onDelete: onDelete,
-            dismiss: dismiss
+            onDelete: onDelete
         ))
     }
     
@@ -350,9 +396,7 @@ struct ClipPlayerView: View {
                     isActive: isActive,
                     backgroundColor: colorScheme == .dark ? .black : .white,
                     onSingleTap: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showUI.toggle()
-                        }
+                        toggleControlsVisibility()
                     },
                     onInteractionLockChanged: onInteractionLockChanged,
                     onLayoutChanged: { videoRect, safeAreaInsets in
@@ -388,6 +432,12 @@ struct ClipPlayerView: View {
                     .foregroundColor(.white.opacity(0.8))
                     .transition(.opacity)
                     .id(playerVM.isPlaying ? "pause_indicator" : "play_indicator")
+            } else if playerVM.showAudioIndicator {
+                Image(systemName: playerVM.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 44))
+                    .foregroundColor(.white.opacity(0.8))
+                    .transition(.opacity)
+                    .id(playerVM.isMuted ? "muted_indicator" : "unmuted_indicator")
             }
         }
         .ignoresSafeArea()
@@ -685,24 +735,51 @@ struct ClipPlayerView: View {
     }
     
     private func handleEditTap() {
-        if isEditable {
+        if playerVM.clip.isReel {
+            editUnavailableMessage = "Reels are unable to be edited."
+            showDeletionWarning = true
+        } else if isEditable {
             wasPlayingBeforeTrim = playerVM.isPlaying
             playerVM.pause()
             showTrimEditor = true
         } else {
+            editUnavailableMessage = "You cannot edit this highlight since the full recording was deleted."
             showDeletionWarning = true
+        }
+    }
+
+    private func toggleControlsVisibility() {
+        controlsAutoHideTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showUI.toggle()
+        }
+        scheduleControlsAutoHideIfNeeded()
+    }
+
+    private func scheduleControlsAutoHideIfNeeded() {
+        controlsAutoHideTask?.cancel()
+        guard isActive, showUI, playerVM.isPlaying else { return }
+
+        controlsAutoHideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled, isActive, playerVM.isPlaying else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showUI = false
+            }
         }
     }
     
     private func performActionOnPhaseChange(oldPhase: ScenePhase, newPhase: ScenePhase) {
-        // Pause (rather than fully tear down) so the player and its position
-        // survive backgrounding — returning to the app resumes right where
-        // you left off instead of showing "Clip not available."
+        // Rotation can briefly move a scene through `.inactive`. Only a true
+        // background transition should pause playback; otherwise rotation
+        // leaves the video paused while its icon still says Pause.
         if newPhase == .active {
-            if oldPhase != .active && isActive && wasPlayingBeforeBackground {
-                playerVM.play()
+            if oldPhase == .background && isActive && wasPlayingBeforeBackground {
+                DispatchQueue.main.async {
+                    self.playerVM.playWhenReady()
+                }
             }
-        } else {
+        } else if newPhase == .background {
             wasPlayingBeforeBackground = playerVM.isPlaying
             playerVM.pause()
         }
@@ -748,7 +825,9 @@ private struct ClipPlayerSheetsAndCoversModifier: ViewModifier {
                     HighlightTrimView(
                         clip: playerVM.clip,
                         fullVideoURL: url,
-                        sessionDuration: sessionDuration
+                        sessionDuration: sessionDuration,
+                        initialPreviewTime: playerVM.clip.highlightIndex == nil ? playerVM.currentPlaybackTime : nil,
+                        startsPaused: playerVM.clip.highlightIndex == nil
                     ) { updatedClip in
                         // Save the new URL now, then rebuild the player after
                         // the editor has actually dismissed.
@@ -778,6 +857,7 @@ private struct ClipPlayerAlertsModifier: ViewModifier {
     @Binding var showRenameAlert: Bool
     @Binding var showDeleteConfirmation: Bool
     @Binding var showDeletionWarning: Bool
+    let editUnavailableMessage: String
     
     let deleteAlertTitle: String
     let deleteAlertMessage: String
@@ -787,7 +867,6 @@ private struct ClipPlayerAlertsModifier: ViewModifier {
     var onRename: ((String) -> Void)?
     let onTrimSaved: ((Clip) -> Void)?
     let onDelete: (() -> Void)?
-    let dismiss: DismissAction
     
     func body(content: Content) -> some View {
         content
@@ -812,7 +891,6 @@ private struct ClipPlayerAlertsModifier: ViewModifier {
             Button("Delete", role: .destructive) {
                 playerVM.stop()
                 onDelete?()
-                dismiss()
             }
         } message: {
             Text(deleteAlertMessage)
@@ -820,7 +898,7 @@ private struct ClipPlayerAlertsModifier: ViewModifier {
         .alert("Edit Unavailable", isPresented: $showDeletionWarning) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("You cannot edit this highlight since the full recording was deleted.")
+            Text(editUnavailableMessage)
         }
     }
 }
@@ -1336,6 +1414,7 @@ final class ClipPlayerViewModel: ObservableObject {
     @Published var currentTimeLabel: String = "0:00"
     @Published var durationLabel: String = "0:00"
     @Published var showPlayPauseIndicator: Bool = false
+    @Published var showAudioIndicator: Bool = false
     @Published var isScrubbing: Bool = false
     @Published var playbackRate: Float = 1.0
 
@@ -1359,6 +1438,7 @@ final class ClipPlayerViewModel: ObservableObject {
     private var processingTask: Task<Void, Never>?
     private var notificationTask: Task<Void, Never>?
     private var flashTask: Task<Void, Never>?
+    private var audioFlashTask: Task<Void, Never>?
     private var pendingAutoplayTask: Task<Void, Never>?
     private var wasPlayingBeforeScrubbing = false
 
@@ -1562,6 +1642,11 @@ final class ClipPlayerViewModel: ObservableObject {
         isPlaying = false
     }
 
+    var currentPlaybackTime: Double {
+        let seconds = player?.currentTime().seconds ?? 0
+        return seconds.isFinite && seconds >= 0 ? seconds : 0
+    }
+
     func stop() {
         pendingDeactivationTask?.cancel()
         pendingDeactivationTask = nil
@@ -1600,6 +1685,7 @@ final class ClipPlayerViewModel: ObservableObject {
         guard let player else { return }
         isMuted.toggle()
         player.isMuted = isMuted
+        flashAudioIndicator()
     }
 
     func toggleSpeed() {
@@ -1696,6 +1782,16 @@ final class ClipPlayerViewModel: ObservableObject {
         flashTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(0.6))
             self?.showPlayPauseIndicator = false
+        }
+    }
+
+    private func flashAudioIndicator() {
+        audioFlashTask?.cancel()
+        showAudioIndicator = true
+
+        audioFlashTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(0.6))
+            self?.showAudioIndicator = false
         }
     }
 

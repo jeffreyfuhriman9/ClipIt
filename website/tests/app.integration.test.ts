@@ -272,6 +272,44 @@ describe("Stripe webhook validation", () => {
     expect(reviewStore.recordPaidOrder).toHaveBeenCalledWith("cs_test_review", "buyer@example.com", ["clipit-button-placeholder"]);
   });
 
+  it("records fulfillment data only from a signed paid Stripe event", async () => {
+    const stripe = stripeMock({
+      constructEvent: vi.fn().mockReturnValue({
+        id: "evt_fulfillment",
+        type: "checkout.session.completed",
+        data: { object: {
+          id: "cs_test_fulfillment",
+          payment_status: "paid",
+          amount_total: 4499,
+          currency: "usd",
+          customer_details: {
+            name: "Taylor Customer",
+            email: "buyer@example.com",
+            address: { line1: "123 Test Street", line2: null, city: "Boise", state: "ID", postal_code: "83702", country: "US" }
+          },
+          metadata: { fulfillmentOrderLines: '[{"productId":"clipit-button-placeholder","productName":"The ClipIt Button","quantity":1,"unitAmount":4499}]' }
+        } }
+      }) as StripeClient["webhooks"]["constructEvent"]
+    });
+    const recordPaidOrder = vi.fn().mockResolvedValue(undefined);
+    const orderStore = {
+      recordPaidOrder,
+      listOrders: vi.fn().mockResolvedValue([]),
+      updateFulfillment: vi.fn().mockResolvedValue(true)
+    };
+    const fulfillmentConfig: AppConfig = {
+      ...config,
+      orders: { databaseUrl: "postgresql://example.invalid/orders", adminPassword: "a-secure-dashboard-password-24" }
+    };
+    const app = createApp({ config: fulfillmentConfig, stripe: stripe.client, orderStore });
+    await request(app).post("/webhooks/stripe").set("Content-Type", "application/json").set("stripe-signature", "valid").send("{}").expect(200);
+    expect(recordPaidOrder).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "cs_test_fulfillment",
+      customerEmail: "buyer@example.com",
+      lines: [{ productId: "clipit-button-placeholder", productName: "The ClipIt Button", quantity: 1, unitAmount: 4499 }]
+    }));
+  });
+
   it("asks Stripe to retry when downstream order handling fails", async () => {
     const stripe = stripeMock();
     const app = createApp({
@@ -288,5 +326,59 @@ describe("Stripe webhook validation", () => {
       .set("stripe-signature", "valid-test-signature")
       .send("{}")
       .expect(500);
+  });
+});
+
+describe("private fulfillment dashboard", () => {
+  const fulfillmentConfig: AppConfig = {
+    ...config,
+    orders: { databaseUrl: "postgresql://example.invalid/orders", adminPassword: "a-secure-dashboard-password-24" }
+  };
+  const dashboardOrder = {
+    sessionId: "cs_test_order",
+    customerName: "Taylor Customer",
+    customerEmail: "buyer@example.com",
+    address: { line1: "123 Test Street", line2: null, city: "Boise", state: "ID", postalCode: "83702", country: "US" },
+    amountTotal: 4499,
+    currency: "usd",
+    status: "paid" as const,
+    carrier: null,
+    trackingNumber: null,
+    shippedAt: null,
+    createdAt: "2026-10-15T00:00:00.000Z",
+    lines: [{ productId: "clipit-button-placeholder", productName: "The ClipIt Button", quantity: 1, unitAmount: 4499 }]
+  };
+
+  function fulfillmentStore() {
+    return {
+      recordPaidOrder: vi.fn().mockResolvedValue(undefined),
+      listOrders: vi.fn().mockResolvedValue([dashboardOrder]),
+      updateFulfillment: vi.fn().mockResolvedValue(true)
+    };
+  }
+
+  it("requires the fulfillment password before displaying customer data", async () => {
+    const app = createApp({ config: fulfillmentConfig, stripe: stripeMock().client, orderStore: fulfillmentStore() });
+    await request(app).get("/fulfillment").expect(401);
+    await request(app)
+      .get("/fulfillment")
+      .auth("clipit", fulfillmentConfig.orders!.adminPassword)
+      .expect(200)
+      .expect(/123 Test Street/);
+  });
+
+  it("saves a tracking number only through an authenticated same-origin request", async () => {
+    const orderStore = fulfillmentStore();
+    const app = createApp({ config: fulfillmentConfig, stripe: stripeMock().client, orderStore });
+    await request(app)
+      .post("/fulfillment/cs_test_order")
+      .auth("clipit", fulfillmentConfig.orders!.adminPassword)
+      .set("Origin", fulfillmentConfig.appUrl)
+      .type("form")
+      .send({ status: "fulfilled", carrier: "USPS", trackingNumber: "9400TEST" })
+      .expect(303);
+    expect(orderStore.updateFulfillment).toHaveBeenCalledWith("cs_test_order", {
+      status: "fulfilled", carrier: "USPS", trackingNumber: "9400TEST"
+    });
   });
 });

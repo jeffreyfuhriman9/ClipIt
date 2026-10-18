@@ -172,7 +172,7 @@ struct ContentView: View {
                     .tag(1)
 
                 // 📡 DEVICE TAB: Solid white bar + standard dark icons
-                BLEDeviceView()
+                BLEDeviceView(isSelected: selectedTab == 2)
                     .toolbarBackground(.visible, for: .tabBar)
                     .tabItem {
                         Label("Device", systemImage: "button.programmable.square")
@@ -198,6 +198,7 @@ struct ContentView: View {
             .environmentObject(recordingVM)
             .environmentObject(tutorial)
             .onAppear {
+                bleVM.setRecordingInProgress(recordingVM.recordingState == .active)
                 if !hasSeenGuidedTour && tutorial.step == nil {
                     tutorial.start()
                 }
@@ -255,11 +256,22 @@ struct ContentView: View {
         .onReceive(bleVM.reliableCommandTrigger) { command in
             if command.kind == .clip, let age = command.ageMilliseconds {
                 let pressedAt = Date().addingTimeInterval(-Double(age) / 1000)
-                let result = recordingVM.registerRecoveredButtonClip(at: pressedAt)
+                let wasBufferedDuringDisconnect = age >= 1_000
+                let result = recordingVM.registerRecoveredButtonClip(
+                    at: pressedAt,
+                    isBufferedDuringDisconnect: wasBufferedDuringDisconnect
+                )
                 print("[ClipIt Recovery] sequence=\(command.sequence) ageMs=\(age) result=\(result) recording=\(recordingVM.recordingState) camera=\(recordingVM.cameraConfirmedRecording)")
                 switch result {
-                case .saved:
+                case .saved(let clipID):
                     bleVM.reportClipTransferStatus("Registered button tap \(command.sequence); the clip will appear after processing.")
+                    // A meaningful age identifies a tap held by the button
+                    // during a dropped BLE connection. Group these into one
+                    // clear reconnect confirmation instead of showing a
+                    // separate banner for every replayed packet.
+                    if wasBufferedDuringDisconnect {
+                        recordingVM.queueRecoveredClipConfirmation(for: clipID)
+                    }
                     bleVM.acknowledge(command, accepted: true)
                 case .retryLater:
                     bleVM.reportClipTransferStatus("Received button tap \(command.sequence); waiting for its recording.")
@@ -267,7 +279,7 @@ struct ContentView: View {
                 case .noRecording:
                     bleVM.reportClipTransferStatus("Received button tap \(command.sequence), but no matching video was found.")
                     bleVM.acknowledge(command, accepted: false)
-                    bleVM.reportCommandError("A button tap could not be saved because no recording has been started.")
+                    bleVM.reportCommandError("A ClipIt highlight could not be saved. Hold 3 seconds to start a recording.")
                 }
             } else {
                 bleVM.acknowledge(command, accepted: handleButtonCommand(command.kind))
@@ -281,6 +293,7 @@ struct ContentView: View {
             sendActualCameraState()
         }
         .onChange(of: recordingVM.recordingState) { _, state in
+            bleVM.setRecordingInProgress(state == .active)
             if state != .active {
                 cameraActuallyRecording = false
                 sendActualCameraState()
@@ -288,7 +301,7 @@ struct ContentView: View {
         }
         .onReceive(recordingVM.cameraManager.recordingFailed) { reason in
             cameraActuallyRecording = false
-            recordingVM.discardSession()
+            recordingVM.handleCameraRecordingFailure(reason)
             bleVM.reportCommandError(reason)
             bleVM.sendRemoteCommand("COMMAND_FAILED")
             sendActualCameraState()

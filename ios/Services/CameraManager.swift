@@ -3,6 +3,60 @@ import AVFoundation
 import Combine
 import QuartzCore
 
+/// Small, privacy-conscious diagnostics retained in the app container. Entries
+/// contain operational facts only — never video, audio, thumbnails, or titles.
+final class RecordingDiagnostics {
+    static let shared = RecordingDiagnostics()
+
+    private let queue = DispatchQueue(label: "com.clipit.recording-diagnostics")
+    private let formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private init() {}
+
+    var logURL: URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ClipIt", isDirectory: true)
+        return support.appendingPathComponent("recording-diagnostics.jsonl")
+    }
+
+    func log(_ event: String, details: [String: Any] = [:]) {
+        queue.async { [formatter, logURL] in
+            let directory = logURL.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+            var entry: [String: Any] = details
+            entry["timestamp"] = formatter.string(from: Date())
+            entry["event"] = event
+            entry["thermalState"] = ProcessInfo.processInfo.thermalState.rawValue
+            entry["freeStorageBytes"] = Self.freeStorageBytes() ?? NSNull()
+
+            guard let data = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]) else { return }
+            var line = data
+            line.append(0x0A)
+
+            if FileManager.default.fileExists(atPath: logURL.path) {
+                if let handle = try? FileHandle(forWritingTo: logURL) {
+                    defer { try? handle.close() }
+                    _ = try? handle.seekToEnd()
+                    try? handle.write(contentsOf: line)
+                }
+            } else {
+                try? line.write(to: logURL, options: .atomic)
+            }
+        }
+    }
+
+    private static func freeStorageBytes() -> Int64? {
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            .volumeAvailableCapacityForImportantUsage
+    }
+}
+
 final class CameraManager: NSObject, ObservableObject {
 
     @Published var isRunning: Bool = false
@@ -26,6 +80,10 @@ final class CameraManager: NSObject, ObservableObject {
     let recordingStarted = PassthroughSubject<Void, Never>()
     let recordingFailed = PassthroughSubject<String, Never>()
 
+    private enum MovieRecordingState: String {
+        case idle, starting, recording, stopping
+    }
+
     private let sessionQueue = DispatchQueue(label: "com.clipit.camera.session", qos: .userInitiated)
     private var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
@@ -43,8 +101,42 @@ final class CameraManager: NSObject, ObservableObject {
     private var currentCaptureRotationAngle: CGFloat = 0
     private var latestCaptureRotationAngle: CGFloat = 0
     private var activeMovieURL: URL?
+    /// Accessed exclusively on `sessionQueue`.
+    private var movieRecordingState: MovieRecordingState = .idle
     private let recordingRotationLock = NSLock()
     private var recordingRotationLocked = false
+
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(captureSessionWasInterrupted(_:)),
+            name: .AVCaptureSessionWasInterrupted,
+            object: session
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(captureSessionInterruptionEnded(_:)),
+            name: .AVCaptureSessionInterruptionEnded,
+            object: session
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(captureSessionRuntimeError(_:)),
+            name: .AVCaptureSessionRuntimeError,
+            object: session
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(audioSessionInterrupted(_:)),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
 
     var displayZoomFactor: CGFloat {
         zoomFactor / (isUsingFrontCamera ? 1.0 : 2.0)
@@ -169,7 +261,9 @@ final class CameraManager: NSObject, ObservableObject {
 
         // 4. Movie File Output
         let movieOut = AVCaptureMovieFileOutput()
-        movieOut.movieFragmentInterval = .invalid
+        // Apple writes a usable sample table into each fragment. If recording
+        // is interrupted, video up through the last fragment remains playable.
+        movieOut.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
         
         if session.canAddOutput(movieOut) {
             session.addOutput(movieOut)
@@ -570,18 +664,37 @@ final class CameraManager: NSObject, ObservableObject {
         setRecordingRotationLocked(true)
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
-            
-            // 🔥 THE FIX: Check if a file already exists at this exact URL and delete it
-            if FileManager.default.fileExists(atPath: url.path) {
-                do {
-                    try FileManager.default.removeItem(at: url)
-                    print("[CameraManager] 🗑️ Cleaned up pre-existing file at: \(url.lastPathComponent)")
-                } catch {
-                    print("[CameraManager] ❌ Failed to clear existing file: \(error.localizedDescription)")
+            guard self.movieRecordingState == .idle, !movieOutput.isRecording else {
+                self.setRecordingRotationLocked(false)
+                RecordingDiagnostics.shared.log("recording_start_rejected", details: [
+                    "state": self.movieRecordingState.rawValue,
+                    "filename": url.lastPathComponent
+                ])
+                DispatchQueue.main.async {
+                    self.recordingFailed.send("A recording is already starting or finishing.")
                 }
+                return
+            }
+
+            // URLs are UUID-backed and must never collide. Refuse to overwrite
+            // an existing movie so a recoverable recording can never be erased.
+            if FileManager.default.fileExists(atPath: url.path) {
+                self.setRecordingRotationLocked(false)
+                RecordingDiagnostics.shared.log("recording_start_rejected_existing_file", details: [
+                    "filename": url.lastPathComponent
+                ])
+                DispatchQueue.main.async {
+                    self.recordingFailed.send("Could not start safely because a recording file already exists.")
+                }
+                return
             }
             
             self.activeMovieURL = url
+            self.movieRecordingState = .starting
+            RecordingDiagnostics.shared.log("recording_start_requested", details: [
+                "filename": url.lastPathComponent,
+                "resolution": self.videoQuality.rawValue
+            ])
             if let connection = movieOutput.connection(with: .video),
                connection.isVideoRotationAngleSupported(self.currentCaptureRotationAngle) {
                 connection.videoRotationAngle = self.currentCaptureRotationAngle
@@ -607,7 +720,18 @@ final class CameraManager: NSObject, ObservableObject {
 
     func stopMovieRecording() {
         sessionQueue.async { [weak self] in
-            self?.movieFileOutput?.stopRecording()
+            guard let self, let output = self.movieFileOutput else { return }
+            guard self.movieRecordingState == .starting || self.movieRecordingState == .recording || output.isRecording else {
+                RecordingDiagnostics.shared.log("recording_stop_ignored", details: ["state": self.movieRecordingState.rawValue])
+                return
+            }
+            self.movieRecordingState = .stopping
+            RecordingDiagnostics.shared.log("recording_stop_requested", details: [
+                "filename": self.activeMovieURL?.lastPathComponent ?? "unknown",
+                "durationSeconds": output.recordedDuration.seconds,
+                "fileSizeBytes": output.recordedFileSize
+            ])
+            output.stopRecording()
         }
     }
 
@@ -620,10 +744,9 @@ final class CameraManager: NSObject, ObservableObject {
             if !session.isRunning {
                 sessionQueue.async { [weak self] in
                     guard let self else { return }
-                    // If there's an active movie recording, stop it first to clean up
-                    if let movieOut = self.movieFileOutput, movieOut.isRecording {
-                        movieOut.stopRecording()
-                    }
+                    // Never restart the capture session over an in-flight movie.
+                    // AVFoundation owns finalization once recording has started.
+                    guard self.movieRecordingState == .idle else { return }
                     self.session.startRunning()
                     
                     // 🔥 THE FIX: Re-lock focus on startup
@@ -692,44 +815,142 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
     nonisolated func fileOutput(_ output: AVCaptureFileOutput,
                                 didStartRecordingTo fileURL: URL,
                                 from connections: [AVCaptureConnection]) {
-        Task { @MainActor in self.recordingStarted.send() }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.movieRecordingState = .recording
+            RecordingDiagnostics.shared.log("recording_started", details: ["filename": fileURL.lastPathComponent])
+            DispatchQueue.main.async { self.recordingStarted.send() }
+        }
     }
 
     nonisolated func fileOutput(_ output: AVCaptureFileOutput,
                                 didFinishRecordingTo outputFileURL: URL,
                                 from connections: [AVCaptureConnection],
                                 error: Error?) {
-        if let error { print("[CameraManager] movie recording error: \(error)") }
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            if self.activeMovieURL == outputFileURL {
-                self.activeMovieURL = nil
-                self.setRecordingRotationLocked(false)
-                self.applyCaptureRotationOnSessionQueue(self.latestCaptureRotationAngle)
-            }
-            DispatchQueue.main.async {
-                if #available(iOS 17.0, *),
-                   let previewLayer = self.activePreviewLayer,
-                   let coordinator = self.rotationCoordinator {
-                    let angle = coordinator.videoRotationAngleForHorizonLevelPreview
-                    if let connection = previewLayer.connection,
-                       connection.isVideoRotationAngleSupported(angle) {
-                        connection.videoRotationAngle = angle
+            let errorDetails = self.recordingErrorDetails(error)
+            let successfullyFinished = (error as NSError?)?.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool
+            Task { [weak self] in
+                guard let self else { return }
+                let validation = await self.validateMovie(at: outputFileURL)
+                self.sessionQueue.async {
+                    RecordingDiagnostics.shared.log("recording_completion", details: errorDetails.merging([
+                        "filename": outputFileURL.lastPathComponent,
+                        "fileExists": validation.exists,
+                        "fileSizeBytes": validation.fileSize,
+                        "isPlayable": validation.isPlayable,
+                        "durationSeconds": validation.duration,
+                        "hasVideoTrack": validation.hasVideoTrack,
+                        "successfullyFinished": successfullyFinished ?? NSNull()
+                    ]) { _, new in new })
+
+                    if self.activeMovieURL == outputFileURL {
+                        self.activeMovieURL = nil
+                        self.setRecordingRotationLocked(false)
+                        self.applyCaptureRotationOnSessionQueue(self.latestCaptureRotationAngle)
                     }
-                }
-                let fileSize = (try? FileManager.default.attributesOfItem(
-                    atPath: outputFileURL.path
-                )[.size] as? NSNumber)?.intValue ?? 0
-                if let error {
-                    self.recordingFailed.send("Recording failed: \(error.localizedDescription)")
-                } else if FileManager.default.fileExists(atPath: outputFileURL.path),
-                          fileSize > 0 {
-                    self.movieFileReady.send(outputFileURL)
-                } else {
-                    self.recordingFailed.send("Recording produced no video file.")
+                    self.movieRecordingState = .idle
+                    DispatchQueue.main.async {
+                        if #available(iOS 17.0, *),
+                           let previewLayer = self.activePreviewLayer,
+                           let coordinator = self.rotationCoordinator {
+                            let angle = coordinator.videoRotationAngleForHorizonLevelPreview
+                            if let connection = previewLayer.connection,
+                               connection.isVideoRotationAngleSupported(angle) {
+                                connection.videoRotationAngle = angle
+                            }
+                        }
+                        // An AVFoundation error does not automatically mean the movie
+                        // is unusable. Keep and import every validated video file.
+                        if validation.isValid {
+                            self.movieFileReady.send(outputFileURL)
+                        } else {
+                            let message = error.map { "Recording failed: \($0.localizedDescription)" }
+                                ?? "Recording produced no playable video file."
+                            self.recordingFailed.send(message)
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+private extension CameraManager {
+    struct MovieValidation {
+        let exists: Bool
+        let fileSize: Int64
+        let duration: Double
+        let isPlayable: Bool
+        let hasVideoTrack: Bool
+
+        var isValid: Bool {
+            exists && fileSize > 0 && duration.isFinite && duration > 0 && isPlayable && hasVideoTrack
+        }
+    }
+
+    func validateMovie(at url: URL) async -> MovieValidation {
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        let fileSize = ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? NSNumber)?.int64Value ?? 0
+        guard exists && fileSize > 0 else {
+            return MovieValidation(exists: exists, fileSize: fileSize, duration: 0, isPlayable: false, hasVideoTrack: false)
+        }
+        let asset = AVURLAsset(url: url)
+        do {
+            async let duration = asset.load(.duration)
+            async let isPlayable = asset.load(.isPlayable)
+            async let videoTracks = asset.loadTracks(withMediaType: .video)
+            let (loadedDuration, loadedPlayable, loadedVideoTracks) = try await (duration, isPlayable, videoTracks)
+            return MovieValidation(
+                exists: exists,
+                fileSize: fileSize,
+                duration: loadedDuration.seconds,
+                isPlayable: loadedPlayable,
+                hasVideoTrack: !loadedVideoTracks.isEmpty
+            )
+        } catch {
+            return MovieValidation(exists: exists, fileSize: fileSize, duration: 0, isPlayable: false, hasVideoTrack: false)
+        }
+    }
+
+    func recordingErrorDetails(_ error: Error?) -> [String: Any] {
+        guard let error else { return [:] }
+        let nsError = error as NSError
+        var details: [String: Any] = [
+            "errorDomain": nsError.domain,
+            "errorCode": nsError.code,
+            "errorDescription": nsError.localizedDescription
+        ]
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            details["underlyingErrorDomain"] = underlying.domain
+            details["underlyingErrorCode"] = underlying.code
+            details["underlyingErrorDescription"] = underlying.localizedDescription
+        }
+        return details
+    }
+
+    @objc func captureSessionWasInterrupted(_ notification: Notification) {
+        let reason = (notification.userInfo?[AVCaptureSessionInterruptionReasonKey] as? NSNumber)?.intValue
+        RecordingDiagnostics.shared.log("capture_session_interrupted", details: ["reason": reason ?? NSNull()])
+    }
+
+    @objc func captureSessionInterruptionEnded(_ notification: Notification) {
+        RecordingDiagnostics.shared.log("capture_session_interruption_ended")
+    }
+
+    @objc func captureSessionRuntimeError(_ notification: Notification) {
+        let error = notification.userInfo?[AVCaptureSessionErrorKey] as? NSError
+        RecordingDiagnostics.shared.log("capture_session_runtime_error", details: [
+            "errorDomain": error?.domain ?? NSNull(),
+            "errorCode": error?.code ?? NSNull(),
+            "errorDescription": error?.localizedDescription ?? NSNull()
+        ])
+    }
+
+    @objc func audioSessionInterrupted(_ notification: Notification) {
+        let type = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.intValue
+        RecordingDiagnostics.shared.log("audio_session_interruption", details: ["type": type ?? NSNull()])
     }
 }
 

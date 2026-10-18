@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash, timingSafeEqual } from "node:crypto";
 import compression from "compression";
 import express, { type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
@@ -13,6 +14,7 @@ import { testimonials } from "./data/testimonials.js";
 import { CartValidationError, validateCart } from "./services/cart.js";
 import { createStripeClient, type StripeClient } from "./services/stripe.js";
 import { createContactMailer, type ContactMailer } from "./services/contact.js";
+import { createOrderStore, paidOrderFromSession, type OrderLine, type OrderStore } from "./services/orders.js";
 import {
   createReviewStore,
   ReviewClaimError,
@@ -36,6 +38,7 @@ type AppDependencies = {
     getProductReviews(productId: string): Promise<ReviewData>;
     submit(token: string, values: { name: string; rating: number; body: string }, uploads: ReviewUpload[]): Promise<void>;
   };
+  orderStore?: Pick<OrderStore, "recordPaidOrder" | "listOrders" | "updateFulfillment">;
 };
 
 const contactSchema = z.object({
@@ -60,6 +63,18 @@ const reviewSchema = z.object({
   website: z.string().max(1_000).optional().default("")
 });
 
+const fulfillmentSchema = z
+  .object({
+    status: z.enum(["paid", "fulfilled"]),
+    carrier: z.string().trim().max(80, "Carrier name is too long.").regex(/^[^\r\n]*$/, "Carrier name must be one line."),
+    trackingNumber: z.string().trim().max(160, "Tracking number is too long.").regex(/^[^\r\n]*$/, "Tracking number must be one line.")
+  })
+  .superRefine((values, context) => {
+    if (values.status === "fulfilled" && !values.trackingNumber) {
+      context.addIssue({ code: "custom", path: ["trackingNumber"], message: "Enter a tracking number before marking an order fulfilled." });
+    }
+  });
+
 const emptyReviews: ReviewData = {
   summary: { average: 0, count: 0, breakdown: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } },
   reviews: []
@@ -73,6 +88,52 @@ function parseReviewProductIds(metadata: Stripe.Metadata | null | undefined) {
     return Array.isArray(values) && values.every((value) => typeof value === "string") ? values : [];
   } catch {
     return [];
+  }
+}
+
+function parseFulfillmentOrderLines(metadata: Stripe.Metadata | null | undefined): OrderLine[] {
+  const raw = metadata?.fulfillmentOrderLines;
+  if (!raw) return [];
+  try {
+    const values: unknown = JSON.parse(raw);
+    if (!Array.isArray(values)) return [];
+    return values.flatMap((value) => {
+      if (!value || typeof value !== "object") return [];
+      const line = value as Record<string, unknown>;
+      if (
+        typeof line.productId !== "string" || typeof line.productName !== "string" ||
+        !Number.isInteger(line.quantity) || !Number.isInteger(line.unitAmount) ||
+        line.quantity <= 0 || line.unitAmount < 0
+      ) return [];
+      return [{ productId: line.productId, productName: line.productName, quantity: line.quantity, unitAmount: line.unitAmount }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function credentialsMatch(request: Request, password: string) {
+  const authorization = request.get("authorization");
+  if (!authorization?.startsWith("Basic ")) return false;
+  try {
+    const decoded = Buffer.from(authorization.slice(6), "base64").toString("utf8");
+    const separator = decoded.indexOf(":");
+    if (separator < 0 || decoded.slice(0, separator) !== "clipit") return false;
+    const expected = createHash("sha256").update(password).digest();
+    const actual = createHash("sha256").update(decoded.slice(separator + 1)).digest();
+    return timingSafeEqual(expected, actual);
+  } catch {
+    return false;
+  }
+}
+
+function sameOrigin(request: Request, appUrl: string) {
+  const source = request.get("origin") ?? request.get("referer");
+  if (!source) return false;
+  try {
+    return new URL(source).origin === appUrl;
+  } catch {
+    return false;
   }
 }
 
@@ -94,6 +155,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     (config.stripeSecretKey ? createStripeClient(config.stripeSecretKey) : undefined);
   const contactMailer = dependencies.contactMailer ?? createContactMailer(config);
   const reviewStore = dependencies.reviewStore ?? createReviewStore(config);
+  const orderStore = dependencies.orderStore ?? createOrderStore(config);
   const reviewMediaOrigin = config.reviews ? new URL(config.reviews.media.publicBaseUrl).origin : undefined;
   const app = express();
 
@@ -165,8 +227,14 @@ export function createApp(dependencies: AppDependencies = {}) {
               const claims = await reviewStore.recordPaidOrder(session.id, customerEmail, productIds);
               await sendReviewInvitations(config, customerEmail, claims);
             }
-            // Replace or extend this callback with durable fulfillment/email logic.
-            // Stripe event IDs are stable; any downstream side effect must be idempotent.
+            if (orderStore) {
+              const orderLines = parseFulfillmentOrderLines(session.metadata);
+              if (!orderLines.length) throw new Error("Paid Checkout session is missing fulfillment line items.");
+              // This persists only data from Stripe's signed event plus the server-created
+              // checkout metadata. Browser-provided cart prices and addresses are never used.
+              await orderStore.recordPaidOrder(paidOrderFromSession(session, orderLines));
+            }
+            // Any future downstream side effect must remain idempotent because Stripe retries.
             await dependencies.onPaidOrder?.(session);
             console.info(
               JSON.stringify({
@@ -332,7 +400,17 @@ export function createApp(dependencies: AppDependencies = {}) {
           itemCount: String(lines.reduce((total, line) => total + line.quantity, 0)),
           // This is a server-derived product list. It is consumed only by the
           // signed Stripe webhook to issue review links after payment succeeds.
-          reviewProductIds: JSON.stringify([...new Set(lines.map((line) => line.product.id))])
+          reviewProductIds: JSON.stringify([...new Set(lines.map((line) => line.product.id))]),
+          // The fulfillment dashboard trusts this only after Stripe verifies the
+          // signed webhook. It captures the exact catalog values at checkout time.
+          fulfillmentOrderLines: JSON.stringify(
+            lines.map(({ product, quantity }) => ({
+              productId: product.id,
+              productName: product.name,
+              quantity,
+              unitAmount: product.priceCents
+            }))
+          )
         }
       });
 
@@ -479,6 +557,60 @@ export function createApp(dependencies: AppDependencies = {}) {
       status: "canceled",
       message: "No payment was completed. Your cart is still here when you are ready."
     });
+  });
+
+  const fulfillmentLimiter = rateLimit({
+    windowMs: 15 * 60 * 1_000,
+    limit: config.nodeEnv === "test" ? 1_000 : 10,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: "Too many dashboard sign-in attempts. Please wait and try again."
+  });
+
+  function requireFulfillmentAccess(request: Request, response: Response) {
+    if (!config.orders || !orderStore) {
+      response.status(503).render("500", { title: "Fulfillment dashboard is not configured — ClipIt" });
+      return false;
+    }
+    if (!credentialsMatch(request, config.orders.adminPassword)) {
+      response.set("WWW-Authenticate", 'Basic realm="ClipIt fulfillment", charset="UTF-8"');
+      response.status(401).type("text").send("Sign-in required.");
+      return false;
+    }
+    return true;
+  }
+
+  app.get("/fulfillment", fulfillmentLimiter, async (request, response, next) => {
+    if (!requireFulfillmentAccess(request, response)) return;
+    try {
+      const notice = request.query.updated === "1" ? "Order fulfillment details saved." : undefined;
+      response.render("fulfillment", { title: "Fulfillment — ClipIt", orders: await orderStore!.listOrders(), notice });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/fulfillment/:sessionId", fulfillmentLimiter, async (request, response, next) => {
+    if (!requireFulfillmentAccess(request, response)) return;
+    if (!sameOrigin(request, config.appUrl)) {
+      response.status(403).type("text").send("This dashboard request was blocked for safety. Reload the page and try again.");
+      return;
+    }
+    const parsed = fulfillmentSchema.safeParse(request.body);
+    if (!parsed.success) {
+      response.status(400).type("text").send(parsed.error.issues[0]?.message ?? "Please check the fulfillment form.");
+      return;
+    }
+    try {
+      const updated = await orderStore!.updateFulfillment(request.params.sessionId, parsed.data);
+      if (!updated) {
+        response.status(404).type("text").send("Order not found.");
+        return;
+      }
+      response.redirect(303, "/fulfillment?updated=1");
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get("/health", (_request, response) => {

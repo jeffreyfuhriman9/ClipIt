@@ -18,6 +18,7 @@ struct RecordView: View {
     @State private var showClipSavedBanner = false
     @State private var clipSavedText = ""
     @State private var clipSavedIsFavorite = false
+    @State private var clipSavedAllowsFavorite = false
     @State private var clipSavedHideTask: DispatchWorkItem?
     
     // Pinch-to-zoom
@@ -155,16 +156,18 @@ struct RecordView: View {
                                 Text(clipSavedText)
                                     .font(.system(size: 20, weight: .heavy))
                                     .foregroundColor(.crimsonBlaze)
-                                Button {
-                                    recordingVM.favoriteLatestTriggeredClip()
-                                    clipSavedIsFavorite = true
-                                } label: {
-                                    Image(systemName: clipSavedIsFavorite ? "heart.fill" : "heart")
-                                        .font(.system(size: 24, weight: .bold))
-                                        .foregroundColor(.crimsonBlaze)
+                                if clipSavedAllowsFavorite {
+                                    Button {
+                                        recordingVM.favoriteLatestTriggeredClip()
+                                        clipSavedIsFavorite = true
+                                    } label: {
+                                        Image(systemName: clipSavedIsFavorite ? "heart.fill" : "heart")
+                                            .font(.system(size: 24, weight: .bold))
+                                            .foregroundColor(.crimsonBlaze)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(clipSavedIsFavorite ? "Clip favorited" : "Favorite clip")
                                 }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(clipSavedIsFavorite ? "Clip favorited" : "Favorite clip")
                             }
                                 .padding(.horizontal, 22)
                                 .padding(.vertical, 24)
@@ -222,7 +225,7 @@ struct RecordView: View {
             isCameraTransitioning = false
             // Auto-reconnect belongs to BLEViewModel, not the Record tab.
             // Leaving Record must not cancel an in-progress recovery scan.
-            if !bleVM.autoReconnect && selectedTab != 2 {
+            if !bleVM.autoReconnect && !bleVM.isRecordingReconnectActive && selectedTab != 2 {
                 bleVM.stopScanning()
             }
         }
@@ -251,9 +254,14 @@ struct RecordView: View {
             }
         }
         .onChange(of: recordingVM.clipCount) { _, count in
-            if count > 0 && recordingVM.recordingState == .active {
+            if count > 0 && recordingVM.recordingState == .active &&
+                !recordingVM.latestClipWasRecovered {
                 showClipSavedConfirmation()
             }
+        }
+        .onChange(of: recordingVM.recoveredClipBatch) { _, batch in
+            guard let batch else { return }
+            showRecoveredClipConfirmation(for: batch.clipNumbers)
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase != .active && dimScreenDuringRecording {
@@ -763,6 +771,7 @@ struct RecordView: View {
         // not a saved video file yet.
         clipSavedText = "Clip #\(recordingVM.clipCount) saved!"
         clipSavedIsFavorite = recordingVM.latestTriggeredClip?.isFavorite ?? false
+        clipSavedAllowsFavorite = true
         withAnimation(.easeInOut(duration: 0.2)) { showClipSavedBanner = true }
         
         let task = DispatchWorkItem { [weak recordingVM] in
@@ -771,6 +780,33 @@ struct RecordView: View {
         }
         clipSavedHideTask = task
         DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: task)
+    }
+
+    private func showRecoveredClipConfirmation(for clipNumbers: [Int]) {
+        guard let first = clipNumbers.first else { return }
+        clipSavedHideTask?.cancel()
+        clipSavedText = recoveredClipMessage(for: clipNumbers, first: first)
+        clipSavedIsFavorite = false
+        clipSavedAllowsFavorite = false
+        withAnimation(.easeInOut(duration: 0.2)) { showClipSavedBanner = true }
+
+        let task = DispatchWorkItem {
+            withAnimation(.easeOut(duration: 0.5)) { self.showClipSavedBanner = false }
+        }
+        clipSavedHideTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: task)
+    }
+
+    private func recoveredClipMessage(for numbers: [Int], first: Int) -> String {
+        if numbers.count == 1 {
+            return "Clip #\(first) saved while button was disconnected!"
+        }
+        let isConsecutive = zip(numbers, numbers.dropFirst()).allSatisfy { $1 == $0 + 1 }
+        if isConsecutive, let last = numbers.last {
+            return "Clips #\(first)–#\(last) saved while button was disconnected!"
+        }
+        let list = numbers.map { "#\($0)" }.joined(separator: ", ")
+        return "Clips \(list) saved while button was disconnected!"
     }
     
 }

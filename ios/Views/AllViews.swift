@@ -22,7 +22,7 @@ private struct ClipRow: View {
     
     // 🌟 Multi-Select Properties
     let isSelectionMode: Bool
-    let isSelected: Bool
+    let isSelected: Bool = true
     let onSelectToggle: () -> Void
     
     let onDeleteFullRecording: (() -> Void)?
@@ -196,11 +196,11 @@ private struct ClipRow: View {
 // MARK: - BLEDeviceView
 
 struct BLEDeviceView: View {
+    let isSelected: Bool
     @EnvironmentObject var bleVM: BLEViewModel
     @EnvironmentObject private var tutorial: TutorialController
     @State private var showingRenameButton = false
     @State private var proposedButtonName = ""
-    @State private var showingAutoReconnectConfirmation = false
 
     private var isConnected: Bool { bleVM.bleState.isConnected }
     private var isConnecting: Bool {
@@ -211,39 +211,35 @@ struct BLEDeviceView: View {
     private var statusDetail: String {
         switch bleVM.bleState {
         case .connected:
-            return "Press your ClipIt Button while recording to save a highlight."
+            return "Ready to ClipIt!"
         case .connecting:
-            return "Keep your button nearby while the connection finishes."
+            return "Connecting..."
         case .scanning:
             if bleVM.isWaitingForManualButtonSelection {
-                return "Choose a button below to reconnect. Your disconnected button won't reconnect on its own."
+                return "Turn on your ClipIt Button and find it in the nearby buttons list below."
             }
-            return "Turn on your button and keep it close to this device."
+            return "Turn on your ClipIt Button and find it in the nearby buttons list below."
         case .poweredOff:
             return ""
         case .disconnected:
             if bleVM.isWaitingForManualButtonSelection {
                 return "Choose your button from the nearby list to reconnect."
             }
-            return "Turn on your button, then scan to connect."
+            return "Turn on your button and it will appear below."
         }
     }
 
     private var statusLabel: String {
         switch bleVM.bleState {
         case .connected: return "Connected"
-        case .connecting: return "Connecting"
-        case .scanning: return "Scanning"
-        case .poweredOff: return "Bluetooth off"
-        case .disconnected: return "Not connected"
+        case .connecting, .scanning, .poweredOff, .disconnected: return "Disconnected"
         }
     }
 
     private var statusColor: Color {
         switch bleVM.bleState {
         case .connected: return .green
-        case .connecting, .scanning: return .blueMarble
-        case .poweredOff, .disconnected: return .secondary
+        case .connecting, .scanning, .poweredOff, .disconnected: return .crimsonBlaze
         }
     }
 
@@ -271,8 +267,18 @@ struct BLEDeviceView: View {
             .toolbarTitleDisplayMode(.large)
         }
         .onAppear {
-            if !tutorial.isActive && !isConnected && !isConnecting {
-                bleVM.startScanning()
+            scanForNearbyButtonsIfNeeded()
+        }
+        .onChange(of: isSelected) { _, _ in
+            // TabView keeps each tab alive. Start a fresh discovery pass when
+            // Device becomes visible instead of relying on `.onAppear` again.
+            scanForNearbyButtonsIfNeeded()
+        }
+        .onChange(of: bleVM.bleState) { _, state in
+            // The Device screen behaves like the system Bluetooth screen:
+            // keep looking while it is visible, without requiring a Scan tap.
+            if case .disconnected = state {
+                scanForNearbyButtonsIfNeeded()
             }
         }
         .alert("Rename ClipIt Button", isPresented: $showingRenameButton) {
@@ -288,16 +294,13 @@ struct BLEDeviceView: View {
                 }
             }
         } message: {
-            Text("This name is saved on your ClipIt Button and appears on every phone that scans for it. Use up to 23 letters, numbers, spaces, hyphens, apostrophes, or underscores.")
+            Text("Personalize your ClipIt Button by giving it a unique name!")
         }
-        .alert("Turn On Auto-Reconnect?", isPresented: $showingAutoReconnectConfirmation) {
-            Button("Not Now", role: .cancel) {}
-            Button("Turn On") {
-                bleVM.setAutoReconnect(true)
-            }
-        } message: {
-            Text("Only turn Auto-Reconnect on if you own your own ClipIt Button. Shared buttons can connect to a nearby phone that used them previously.")
-        }
+    }
+
+    private func scanForNearbyButtonsIfNeeded() {
+        guard isSelected, !tutorial.isActive, !isConnected, !isConnecting else { return }
+        bleVM.startScanning()
     }
 
     private var statusCard: some View {
@@ -305,9 +308,12 @@ struct BLEDeviceView: View {
             HStack(alignment: .top, spacing: 16) {
                 Image(systemName: "button.programmable.square")
                     .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(Color.crimsonBlaze)
+                    .foregroundStyle(isConnected ? Color.green : Color.crimsonBlaze)
                     .frame(width: 64, height: 64)
-                    .background(Color.crimsonBlaze.opacity(0.12), in: RoundedRectangle(cornerRadius: 18))
+                    .background(
+                        (isConnected ? Color.green : Color.crimsonBlaze).opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 18)
+                    )
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .center, spacing: 4) {
@@ -348,12 +354,12 @@ struct BLEDeviceView: View {
                     .padding(.horizontal, 11)
                     .padding(.vertical, 8)
                     .background(statusColor.opacity(0.11), in: Capsule())
-
-                    if let buttonID = bleVM.connectedButtonID {
-                        Text("Button ID \(String(buttonID.uuidString.suffix(4)))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+// Button ID printed
+//                    if let buttonID = bleVM.connectedButtonID {
+//                        Text("Button ID \(String(buttonID.uuidString.suffix(4)))")
+//                            .font(.caption)
+//                            .foregroundStyle(.secondary)
+//                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -370,21 +376,22 @@ struct BLEDeviceView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let transferStatus = bleVM.lastClipTransferStatus {
-                Text("Clip transfer: \(transferStatus)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if let pending = bleVM.pendingButtonClips, isConnected {
-                Text(pending == 0
-                     ? "Button clip queue is clear."
-                     : "Button has \(pending) clip \(pending == 1 ? "tap" : "taps") awaiting acknowledgment.")
-                    .font(.footnote)
-                    .foregroundStyle(pending == 0 ? Color.secondary : Color.crimsonBlaze)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+// Conditional statements with helpful print statements based on clip transfer
+//            if let transferStatus = bleVM.lastClipTransferStatus {
+//                Text("Clip transfer: \(transferStatus)")
+//                    .font(.footnote)
+//                    .foregroundStyle(.secondary)
+//                    .fixedSize(horizontal: false, vertical: true)
+//            }
+//
+//            if let pending = bleVM.pendingButtonClips, isConnected {
+//                Text(pending == 0
+//                     ? "Button clip queue is clear."
+//                     : "Button has \(pending) clip \(pending == 1 ? "tap" : "taps") awaiting acknowledgment.")
+//                    .font(.footnote)
+//                    .foregroundStyle(pending == 0 ? Color.secondary : Color.crimsonBlaze)
+//                    .fixedSize(horizontal: false, vertical: true)
+//            }
 
             if isConnected {
                 Rectangle()
@@ -455,7 +462,7 @@ struct BLEDeviceView: View {
     private var connectionSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             if case .poweredOff = bleVM.bleState {
-                Label("Turn on Bluetooth to find your ClipIt Button.", systemImage: "bluetooth.slash")
+                Label("Turn on Bluetooth to find your ClipIt Button.", systemImage: "antenna.radiowaves.left.and.right")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -472,22 +479,9 @@ struct BLEDeviceView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
                     .background(Color.crimsonBlaze.opacity(0.12), in: RoundedRectangle(cornerRadius: 15))
-                } else {
-                    Button {
-                        bleVM.startScanning()
-                    } label: {
-                        Label("Scan for ClipIt Button", systemImage: "antenna.radiowaves.left.and.right")
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 52)
-                            .foregroundStyle(.white)
-                            .background(Color.crimsonBlaze, in: RoundedRectangle(cornerRadius: 15))
-                            .contentShape(RoundedRectangle(cornerRadius: 15))
-                    }
-                    .buttonStyle(.plain)
                 }
 
-                if !isConnecting && !bleVM.discoveredDevices.isEmpty {
+                if !isConnecting {
                     nearbyDevicesCard
                 }
             }
@@ -503,8 +497,20 @@ struct BLEDeviceView: View {
                 .padding(.top, 18)
                 .padding(.bottom, 8)
 
-            ForEach(bleVM.discoveredDevices) { device in
-                HStack(spacing: 0) {
+            if bleVM.discoveredDevices.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(.blueMarble)
+                    Text("Looking for nearby ClipIt Buttons…")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ForEach(bleVM.discoveredDevices) { device in
                     Button {
                         bleVM.connect(to: device)
                     } label: {
@@ -519,9 +525,9 @@ struct BLEDeviceView: View {
                                 Text(bleVM.displayName(for: device.name))
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(.primary)
-                                Text("ID \(String(device.id.uuidString.suffix(4))) · \(signalDescription(for: device.rssi))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+//                                Text("ID \(String(device.id.uuidString.suffix(4))) · \(signalDescription(for: device.rssi))")
+//                                    .font(.caption)
+//                                    .foregroundStyle(.secondary)
                             }
 
                             Spacer()
@@ -530,7 +536,7 @@ struct BLEDeviceView: View {
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(Color.crimsonBlaze)
                         }
-                        .padding(.leading, 18)
+                        .padding(.horizontal, 18)
                         .padding(.vertical, 12)
                         .contentShape(Rectangle())
                     }
@@ -540,6 +546,7 @@ struct BLEDeviceView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
     }
 
@@ -547,25 +554,25 @@ struct BLEDeviceView: View {
         Toggle(isOn: Binding(
             get: { bleVM.autoReconnect },
             set: { enabled in
-                if enabled {
-                    showingAutoReconnectConfirmation = true
-                } else {
-                    bleVM.setAutoReconnect(false)
-                }
+                bleVM.setAutoReconnect(enabled)
             }
         )) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Auto-reconnect")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.primary)
-                Text("Off by default. Use only with a button you personally own.")
+
+                Text("Your ClipIt Button will automatically reconnect whenever you open the app.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .tint(.crimsonBlaze)
         .padding(18)
-        .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+        .background(
+            Color(UIColor.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 18)
+        )
     }
 
     private func signalDescription(for rssi: Int) -> String {
@@ -837,7 +844,7 @@ struct SettingsView: View {
                 }
                 
                 Section("Bluetooth") {
-                    NavigationLink(destination: BLEDeviceView()) {
+                    NavigationLink(destination: BLEDeviceView(isSelected: true)) {
                         SettingsRow(icon: "button.programmable.square", color: .crimsonBlaze, label: "ClipIt Button") {
                             Text("Configure").foregroundColor(.secondary).font(.system(size: 14))
                         }

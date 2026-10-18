@@ -28,7 +28,7 @@ struct ReliableButtonCommand {
     let ageMilliseconds: UInt32?
 }
 
-enum BLEState {
+enum BLEState: Equatable {
     case poweredOff
     case scanning
     case connecting
@@ -56,6 +56,7 @@ struct DiscoveredDevice: Identifiable {
     let name: String
     let rssi: Int
     let peripheral: CBPeripheral
+    let lastSeen: Date
 }
 
 final class BLEViewModel: NSObject, ObservableObject {
@@ -103,6 +104,15 @@ final class BLEViewModel: NSObject, ObservableObject {
             .compactMap(UUID.init(uuidString:))
     )
     private var rejectedPeripheralIDs = Set<UUID>()
+    private var recordingReconnectPeripheralID: UUID?
+
+    var isRecordingReconnectActive: Bool {
+        recordingReconnectPeripheralID != nil
+    }
+
+    private var shouldRecoverConnection: Bool {
+        autoReconnect || recordingReconnectPeripheralID != nil
+    }
 
     private var hasAutoConnected = false
     private var scanRequestedWhileInitializing = false
@@ -111,6 +121,8 @@ final class BLEViewModel: NSObject, ObservableObject {
     private var handledCommands = UserDefaults.standard.dictionary(forKey: kHandledCommandsKey) as? [String: Bool] ?? [:]
     private var pendingCommandKeys = Set<String>()
     private var connectedButtonName = kClipItName
+    private var discoveredDevicePruneTimer: Timer?
+    private let discoveredDeviceExpiry: TimeInterval = 4
 
     var isWaitingForManualButtonSelection: Bool {
         preferredPeripheralID.map { manuallyDisconnectedButtonIDs.contains($0) } ?? false
@@ -121,10 +133,38 @@ final class BLEViewModel: NSObject, ObservableObject {
         super.init()
     }
 
+    deinit {
+        discoveredDevicePruneTimer?.invalidate()
+    }
+
     func setAutoReconnect(_ enabled: Bool) {
         autoReconnect = enabled
         UserDefaults.standard.set(enabled, forKey: kAutoReconnectKey)
-        if !enabled, connectedPeripheral == nil, !scanRequestedWhileInitializing {
+        if !enabled, recordingReconnectPeripheralID == nil,
+           connectedPeripheral == nil, !scanRequestedWhileInitializing {
+            stopScanning()
+            bleState = .disconnected
+        }
+    }
+
+    func setRecordingInProgress(_ recording: Bool) {
+        if recording {
+            if recordingReconnectPeripheralID == nil, bleState.isConnected {
+                recordingReconnectPeripheralID = connectedButtonID
+            }
+            return
+        }
+
+        let wasRecovering = recordingReconnectPeripheralID != nil
+        recordingReconnectPeripheralID = nil
+        guard !autoReconnect, wasRecovering else { return }
+
+        if let peripheral = connectedPeripheral,
+           !bleState.isConnected, manuallySelectedID == nil {
+            centralManager?.cancelPeripheralConnection(peripheral)
+            clearConnection()
+            bleState = .disconnected
+        } else if connectedPeripheral == nil {
             stopScanning()
             bleState = .disconnected
         }
@@ -154,11 +194,30 @@ final class BLEViewModel: NSObject, ObservableObject {
             // Repeated callbacks let us recognize it without admitting unnamed boards.
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
         )
+        startPruningStaleDiscoveredDevices()
     }
 
     func stopScanning() {
         scanRequestedWhileInitializing = false
         centralManager?.stopScan()
+        stopPruningStaleDiscoveredDevices()
+    }
+
+    private func startPruningStaleDiscoveredDevices() {
+        guard discoveredDevicePruneTimer == nil else { return }
+        discoveredDevicePruneTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.removeStaleDiscoveredDevices()
+        }
+    }
+
+    private func stopPruningStaleDiscoveredDevices() {
+        discoveredDevicePruneTimer?.invalidate()
+        discoveredDevicePruneTimer = nil
+    }
+
+    private func removeStaleDiscoveredDevices() {
+        let expiryDate = Date().addingTimeInterval(-discoveredDeviceExpiry)
+        discoveredDevices.removeAll { $0.lastSeen < expiryDate }
     }
 
     func connect(to device: DiscoveredDevice) {
@@ -195,6 +254,7 @@ final class BLEViewModel: NSObject, ObservableObject {
     func disconnect() {
         guard let peripheral = connectedPeripheral else { return }
         let id = peripheral.identifier
+        recordingReconnectPeripheralID = nil
         manuallyDisconnectedButtonIDs.insert(id)
         saveManuallyDisconnectedButtons()
 
@@ -318,7 +378,7 @@ final class BLEViewModel: NSObject, ObservableObject {
             self.centralManager?.cancelPeripheralConnection(peripheral)
             self.clearConnection()
             self.bleState = .disconnected
-            if self.autoReconnect { self.startScanning() }
+            if self.shouldRecoverConnection { self.startScanning() }
         }
         connectionTimeout = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
@@ -352,7 +412,7 @@ final class BLEViewModel: NSObject, ObservableObject {
         centralManager?.cancelPeripheralConnection(peripheral)
         clearConnection()
         bleState = .disconnected
-        if autoReconnect { startScanning() }
+        if shouldRecoverConnection { startScanning() }
     }
 
     private func finishConnectionIfReady(for peripheral: CBPeripheral) {
@@ -405,7 +465,8 @@ final class BLEViewModel: NSObject, ObservableObject {
                     let existing = discoveredDevices[index]
                     discoveredDevices[index] = DiscoveredDevice(
                         id: existing.id, name: kCustomClipItNamePrefix + receivedName,
-                        rssi: existing.rssi, peripheral: existing.peripheral
+                        rssi: existing.rssi, peripheral: existing.peripheral,
+                        lastSeen: existing.lastSeen
                     )
                 }
             }
@@ -543,7 +604,7 @@ extension BLEViewModel: CBCentralManagerDelegate {
                 }
 
                 self.bleState = .disconnected
-                if self.autoReconnect || self.scanRequestedWhileInitializing {
+                if self.shouldRecoverConnection || self.scanRequestedWhileInitializing {
                     self.startScanning()
                 }
 
@@ -574,18 +635,24 @@ extension BLEViewModel: CBCentralManagerDelegate {
             id: peripheral.identifier,
             name: name,
             rssi: RSSI.intValue,
-            peripheral: peripheral
+            peripheral: peripheral,
+            lastSeen: Date()
         )
 
         DispatchQueue.main.async {
-            if !self.discoveredDevices.contains(where: { $0.id == device.id }) {
+            if let existingIndex = self.discoveredDevices.firstIndex(where: { $0.id == device.id }) {
+                self.discoveredDevices[existingIndex] = device
+            } else {
                 self.discoveredDevices.append(device)
             }
 
-            if self.autoReconnect && !self.hasAutoConnected &&
+            let recordingRecovery = self.recordingReconnectPeripheralID == device.id
+            let normalAutoReconnect = self.autoReconnect &&
+                (self.preferredPeripheralID == nil || self.preferredPeripheralID == device.id)
+            if !self.hasAutoConnected &&
                 !self.manuallyDisconnectedButtonIDs.contains(device.id) &&
                 !self.rejectedPeripheralIDs.contains(device.id) &&
-                (self.preferredPeripheralID == nil || self.preferredPeripheralID == device.id) {
+                (recordingRecovery || normalAutoReconnect) {
                 self.hasAutoConnected = true
                 self.connect(to: device, manuallySelected: false)
             }
@@ -615,7 +682,7 @@ extension BLEViewModel: CBCentralManagerDelegate {
             self.bleState = .disconnected
             self.clearConnection()
 
-            if self.autoReconnect {
+            if self.shouldRecoverConnection {
                 self.startScanning()
             }
         }
@@ -631,7 +698,7 @@ extension BLEViewModel: CBCentralManagerDelegate {
             self.clearConnection()
             self.lastMessage = ""
 
-            if self.autoReconnect {
+            if self.shouldRecoverConnection {
                 self.startScanning()
             }
         }

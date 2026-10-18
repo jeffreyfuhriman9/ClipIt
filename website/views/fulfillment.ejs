@@ -1,0 +1,86 @@
+<%- include('partials/head') %>
+
+<section class="fulfillment-page section-shell">
+  <div class="fulfillment-heading">
+    <div>
+      <span class="eyebrow">Private operations area</span>
+      <h1>Fulfillment</h1>
+      <p class="lede">Paid orders recorded from Stripe’s signed webhook. Customer data is visible only in this password-protected page.</p>
+    </div>
+    <a class="text-link" href="https://dashboard.stripe.com/payments" target="_blank" rel="noopener noreferrer">Open Stripe payments <span aria-hidden="true">↗</span></a>
+  </div>
+
+  <% if (notice) { %><p class="form-success" role="status"><%= notice %></p><% } %>
+
+  <% if (!orders.length) { %>
+    <div class="fulfillment-empty">
+      <h2>No paid orders yet.</h2>
+      <p>After a successful Stripe payment, this page updates when Stripe delivers its signed webhook.</p>
+    </div>
+  <% } else { %>
+    <div class="fulfillment-list">
+      <% orders.forEach((order) => { %>
+        <article class="fulfillment-order">
+          <header class="fulfillment-order-header">
+            <div>
+              <span class="eyebrow">Order received <%= new Date(order.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %></span>
+              <h2><%= order.customerName || 'Customer' %></h2>
+              <a href="mailto:<%= order.customerEmail %>"><%= order.customerEmail %></a>
+            </div>
+            <div class="fulfillment-total">
+              <strong><%= order.amountTotal !== null && order.currency ? formatMoney(order.amountTotal, order.currency) : 'Total unavailable' %></strong>
+              <span class="fulfillment-status fulfillment-status-<%= order.status %>"><%= order.status === 'fulfilled' ? 'Fulfilled' : 'Paid — ready to ship' %></span>
+            </div>
+          </header>
+
+          <div class="fulfillment-details">
+            <section>
+              <h3>Items</h3>
+              <ul class="fulfillment-items">
+                <% order.lines.forEach((line) => { %>
+                  <li><span><%= line.productName %> <small>× <%= line.quantity %></small></span><strong><%= formatMoney(line.unitAmount * line.quantity, order.currency || 'usd') %></strong></li>
+                <% }) %>
+              </ul>
+            </section>
+            <section>
+              <h3>Ship to</h3>
+              <% if (order.address) { %>
+                <address>
+                  <%= order.customerName || 'Customer' %><br>
+                  <%= order.address.line1 %><br>
+                  <% if (order.address.line2) { %><%= order.address.line2 %><br><% } %>
+                  <%= order.address.city %><%= order.address.state ? `, ${order.address.state}` : '' %> <%= order.address.postalCode %><br>
+                  <%= order.address.country %>
+                </address>
+              <% } else { %>
+                <p class="muted">No shipping address was collected for this order.</p>
+              <% } %>
+            </section>
+          </div>
+
+          <form class="fulfillment-form" action="/fulfillment/<%= order.sessionId %>" method="post">
+            <label>
+              Status
+              <select name="status">
+                <option value="paid" <%= order.status === 'paid' ? 'selected' : '' %>>Paid — ready to ship</option>
+                <option value="fulfilled" <%= order.status === 'fulfilled' ? 'selected' : '' %>>Fulfilled</option>
+              </select>
+            </label>
+            <label>
+              Carrier <span class="optional">optional</span>
+              <input name="carrier" maxlength="80" value="<%= order.carrier || '' %>" placeholder="For example: USPS">
+            </label>
+            <label>
+              Tracking number
+              <input name="trackingNumber" maxlength="160" value="<%= order.trackingNumber || '' %>" placeholder="Required when fulfilled">
+            </label>
+            <button class="button button-small" type="submit">Save fulfillment</button>
+          </form>
+          <p class="fulfillment-reference">Stripe Checkout session: <code><%= order.sessionId %></code></p>
+        </article>
+      <% }) %>
+    </div>
+  <% } %>
+</section>
+
+<%- include('partials/footer') %>

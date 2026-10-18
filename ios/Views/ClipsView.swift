@@ -110,6 +110,11 @@ struct ClipsView: View {
 
     private let selectionBarHeight: CGFloat = 44
     private let selectionBottomAnchor = "ClipLibrarySelectionBottom"
+
+    private var selectionSummaryText: String {
+        let count = selectedClipIDs.count
+        return "\(count) \(count == 1 ? "clip" : "clips") selected"
+    }
     
     private var dynamicColumns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
@@ -363,15 +368,6 @@ struct ClipsView: View {
                         },
                         onTrimSaved: { updatedClip in
                             recordingVM.updateClip(updatedClip)
-                            // A Save-as-New trim creates a clip that was not
-                            // in this pager's original list. Return to the
-                            // gallery only for that intentional navigation.
-                            if !presentation.clips.contains(where: { $0.id == updatedClip.id }) {
-                                playerPresentation = nil
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                    recordingVM.pendingHighlightToOpen = updatedClip
-                                }
-                            }
                         },
                         onRename: { clip, name in
                             var updatedClip = clip
@@ -685,6 +681,11 @@ struct ClipsView: View {
             Button(action: shareSelectedClips) {
                 Image(systemName: "square.and.arrow.up").font(.system(size: 20, weight: .semibold))
             }.disabled(selectedClipIDs.isEmpty)
+            Spacer()
+            Text(selectionSummaryText)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.primary)
+                .accessibilityLabel(selectionSummaryText)
             Spacer()
             Button(action: { showDeleteConfirmation = true }) {
                 Image(systemName: "trash").font(.system(size: 20, weight: .semibold))
@@ -1692,6 +1693,11 @@ struct RenameClipSheet: View {
                 RenameFieldSelection.selectAllWhenFocused(editedTitle)
             }
         }
+        .onChange(of: titleIsFocused) { _, focused in
+            if focused {
+                RenameFieldSelection.selectAllWhenFocused(editedTitle)
+            }
+        }
     }
 
     private func saveTitle() {
@@ -1768,6 +1774,11 @@ struct RenameSessionSheet: View {
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 nameIsFocused = true
+                RenameFieldSelection.selectAllWhenFocused(draftName)
+            }
+        }
+        .onChange(of: nameIsFocused) { _, focused in
+            if focused {
                 RenameFieldSelection.selectAllWhenFocused(draftName)
             }
         }

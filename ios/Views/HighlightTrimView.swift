@@ -6,9 +6,11 @@ struct HighlightTrimView: View {
     let clip: Clip
     let fullVideoURL: URL
     let sessionDuration: TimeInterval
+    let startsPaused: Bool
     let onSave: (Clip) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var recordingVM: RecordingViewModel
     @State private var trimStart: Double
     @State private var trimEnd: Double
     @State private var playheadTime: Double
@@ -17,6 +19,8 @@ struct HighlightTrimView: View {
     @State private var exportProgress: String = ""
     @State private var previewPlayer: AVPlayer?
     @State private var title: String
+    @State private var titleEditorDraft = ""
+    @State private var showingTitleEditor = false
     @State private var timeObserver: Any?
     @State private var isDraggingTimeline = false
     @State private var isPreviewPlaying = true
@@ -31,10 +35,18 @@ struct HighlightTrimView: View {
     
     @Environment(\.verticalSizeClass) var verticalSizeClass
     
-    init(clip: Clip, fullVideoURL: URL, sessionDuration: TimeInterval, onSave: @escaping (Clip) -> Void) {
+    init(
+        clip: Clip,
+        fullVideoURL: URL,
+        sessionDuration: TimeInterval,
+        initialPreviewTime: Double? = nil,
+        startsPaused: Bool = false,
+        onSave: @escaping (Clip) -> Void
+    ) {
         self.clip = clip
         self.fullVideoURL = fullVideoURL
         self.sessionDuration = sessionDuration
+        self.startsPaused = startsPaused
         self.onSave = onSave
 
         let initialStart = clip.sourceStartTime ?? 0
@@ -42,7 +54,7 @@ struct HighlightTrimView: View {
 
         _trimStart = State(initialValue: initialStart)
         _trimEnd = State(initialValue: max(initialEnd, initialStart + 5.0))
-        _playheadTime = State(initialValue: initialStart)
+        _playheadTime = State(initialValue: max(initialStart, min(initialPreviewTime ?? initialStart, initialEnd)))
         _draggingTime = State(initialValue: nil)
         _title = State(initialValue: clip.customTitle ?? clip.displayName)
     }
@@ -79,6 +91,18 @@ struct HighlightTrimView: View {
         sourceURL
     }
 
+    /// Keep the editable title visually tied to the kind of video being
+    /// edited, just like its label in the library and player.
+    private var titleColor: Color {
+        if clip.isReel {
+            return .blueMarble
+        } else if clip.highlightIndex != nil {
+            return .crimsonBlaze
+        } else {
+            return .cosmosBlue
+        }
+    }
+
     // MARK: - Two-Tier Window Math
     
     private var windowPadding: Double { 15.0 } // 15s padding on left and right
@@ -108,7 +132,7 @@ struct HighlightTrimView: View {
 
                 VStack(spacing: 0) {
                     previewArea
-                        .frame(maxHeight: isLandscape ? .infinity : 420)
+                        .frame(maxHeight: .infinity)
                         .layoutPriority(1)
 
                     timestampInfo
@@ -130,15 +154,11 @@ struct HighlightTrimView: View {
                     Divider()
                         .overlay(Color(white: 0.2))
 
-                    if !isLandscape {
-                        Spacer()
-                    }
-
                     HStack(spacing: 6) {
                         Image(systemName: "clock")
                             .font(.system(size: 13))
                             .foregroundColor(.cosmosBlue)
-                        Text("Clip duration: \(formatPreciseTime(totalLength))")
+                        Text("Clip length: \(formatPreciseTime(totalLength))")
                             .font(.subheadline)
                             .foregroundColor(.cosmosBlue)
                     }
@@ -151,13 +171,19 @@ struct HighlightTrimView: View {
             .preferredColorScheme(.light)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button {
                         previewPlayer?.pause()
                         previewPlayer?.replaceCurrentItem(with: nil)
                         previewPlayer = nil
                         dismiss()
+                    } label: {
+                        Text("Cancel")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.cosmosBlue)
+                            .frame(width: 72, height: 32, alignment: .center)
+                            .background(Color.gray.opacity(0.18), in: Capsule())
                     }
-                    .foregroundColor(.cosmosBlue.opacity(0.85))
+                    .buttonStyle(.plain)
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
@@ -186,24 +212,51 @@ struct HighlightTrimView: View {
                             }
                         } label: {
                             Text("Save")
-                                .fontWeight(.semibold)
-                                .foregroundColor(.crimsonBlaze)
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.cosmosBlue)
+                                .frame(width: 72, height: 32, alignment: .center)
+                                .background(Color.yellow, in: Capsule())
                         }
+                        .buttonStyle(.plain)
                     } else {
                         // Standard clip save (when editing an already extracted highlight)
-                        Button("Save") {
+                        Button {
                             exportClip(asNewClip: false)
+                        } label: {
+                            Text("Save")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.cosmosBlue)
+                                .frame(width: 72, height: 32, alignment: .center)
+                                .background(Color.yellow, in: Capsule())
                         }
-                        .fontWeight(.semibold)
-                        .foregroundColor(.crimsonBlaze)
+                        .buttonStyle(.plain)
                     }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Button {
+                        titleEditorDraft = title
+                        showingTitleEditor = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(liveDisplayTitle)
+                                .font(.system(size: 16, weight: .semibold))
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .foregroundStyle(titleColor)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Rename \(liveDisplayTitle)")
                 }
             }
         }
         .onAppear {
             loadSourceDurationIfNeeded()
-            playheadTime = clipStart
-            setupPreview()
+            setupPreview(autoplay: !startsPaused)
         }
         .onChange(of: trimStart) { _, _ in
             if playheadTime < clipStart {
@@ -220,6 +273,19 @@ struct HighlightTrimView: View {
             previewPlayer?.pause()
             previewPlayer?.replaceCurrentItem(with: nil)
             previewPlayer = nil
+        }
+        .sheet(isPresented: $showingTitleEditor) {
+            RenameClipSheet(
+                editedTitle: $titleEditorDraft,
+                onSave: { updatedTitle in
+                    title = updatedTitle
+                },
+                onDismiss: {
+                    showingTitleEditor = false
+                }
+            )
+            .presentationDetents([.height(290)])
+            .presentationDragIndicator(.visible)
         }
     }
     
@@ -534,7 +600,7 @@ struct HighlightTrimView: View {
 
     // MARK: - Player & Preview Setup
 
-    private func setupPreview() {
+    private func setupPreview(autoplay: Bool) {
         let start = min(playheadTime, max(videoDuration, 0))
 
         if let player = previewPlayer {
@@ -549,8 +615,12 @@ struct HighlightTrimView: View {
             player.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero)
             previewPlayer = player
             addTimeObserverIfNeeded(to: player)
-            player.play()
-            isPreviewPlaying = true
+            if autoplay {
+                player.play()
+            } else {
+                player.pause()
+            }
+            isPreviewPlaying = autoplay
         }
     }
 
@@ -701,7 +771,9 @@ struct HighlightTrimView: View {
 
             // 🌟 If saving as a new clip, generate a brand new UUID!
             let targetClipID = asNewClip ? UUID() : clip.id
-            let targetHighlightIndex = asNewClip ? 1 : clip.highlightIndex
+            let targetHighlightIndex = asNewClip
+                ? recordingVM.nextHighlightIndex(for: clip.sessionID)
+                : clip.highlightIndex
 
             let baseUUID = UUID().uuidString
             let tempTrimURL = clipsDirectory.appendingPathComponent("\(targetClipID.uuidString)-temp-\(baseUUID).mp4")
@@ -749,6 +821,9 @@ struct HighlightTrimView: View {
                 exportProgress = ""
                 
                 let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Saving an original as a new clip must use its generated
+                // Clip # label rather than carrying over "Original Video".
+                let savedTitle = asNewClip ? nil : (cleanedTitle.isEmpty ? nil : cleanedTitle)
                 
                 let savedClip = Clip(
                     id: targetClipID,
@@ -759,11 +834,11 @@ struct HighlightTrimView: View {
                     duration: trimEnd - trimStart,
                     isUploaded: clip.isUploaded,
                     highlightIndex: targetHighlightIndex,
-                    customTitle: cleanedTitle.isEmpty ? nil : cleanedTitle,
+                    customTitle: savedTitle,
                     sourceVideoURL: sourceURL,
                     sourceStartTime: trimStart,
                     sourceEndTime: trimEnd,
-                    customName: cleanedTitle.isEmpty ? nil : cleanedTitle,
+                    customName: savedTitle,
                     isFavorite: clip.isFavorite
                 )
                 
