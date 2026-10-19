@@ -17,6 +17,7 @@ export type SheetOrder = {
 type GoogleToken = { accessToken: string; expiresAt: number };
 type SpreadsheetMetadata = { sheets?: Array<{ properties?: { sheetId?: number; title?: string } }> };
 type ValuesResponse = { values?: string[][] };
+type AppendResponse = { updates?: { updatedRange?: string } };
 
 const headers = [
   "Stripe checkout session", "Paid at (UTC)", "Customer name", "Customer email", "Shipping address", "Items", "Quantity", "Total",
@@ -48,7 +49,7 @@ function formatTotal(amount: number | null, currency: string | null) {
  */
 export class GoogleSheetsOrderStore {
   private token?: GoogleToken;
-  private layoutReady?: Promise<void>;
+  private layoutReady?: Promise<number>;
 
   constructor(private readonly settings: NonNullable<AppConfig["googleSheets"]>) {}
 
@@ -115,14 +116,19 @@ export class GoogleSheetsOrderStore {
       });
     }
 
-    // Native Google Sheets checkboxes for the fulfillment workflow columns.
+    return sheet.sheetId;
+  }
+
+  private async addCheckboxes(sheetId: number, row: number) {
+    // Apply checkbox formatting only to the newly added order. Formatting a huge
+    // future range makes Sheets consider those blank rows part of the table.
     const checkboxColumns = [8, 9, 10, 11, 13];
     await this.request(this.spreadsheetUrl(":batchUpdate"), {
       method: "POST",
       body: JSON.stringify({
         requests: checkboxColumns.map((startColumnIndex) => ({
           setDataValidation: {
-            range: { sheetId: sheet.sheetId, startRowIndex: 1, endRowIndex: 10_000, startColumnIndex, endColumnIndex: startColumnIndex + 1 },
+            range: { sheetId, startRowIndex: row - 1, endRowIndex: row, startColumnIndex, endColumnIndex: startColumnIndex + 1 },
             rule: { condition: { type: "BOOLEAN" }, showCustomUi: true, strict: true }
           }
         }))
@@ -132,20 +138,23 @@ export class GoogleSheetsOrderStore {
 
   async recordPaidOrder(order: SheetOrder) {
     this.layoutReady ??= this.ensureLayout();
-    await this.layoutReady;
+    const sheetId = await this.layoutReady;
 
     const existing = await this.request<ValuesResponse>(this.spreadsheetUrl(`/values/${this.range("A2:A")}`));
     if (existing.values?.some(([sessionId]) => sessionId === order.sessionId)) return false;
 
     const items = order.lines.map((line) => `${line.productName} × ${line.quantity}`).join("; ");
     const quantity = order.lines.reduce((sum, line) => sum + line.quantity, 0);
-    await this.request(this.spreadsheetUrl(`/values/${this.range("A:O")}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`), {
+    const appended = await this.request<AppendResponse>(this.spreadsheetUrl(`/values/${this.range("A:O")}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`), {
       method: "POST",
       body: JSON.stringify({ values: [[
         order.sessionId, new Date().toISOString(), order.customerName ?? "", order.customerEmail, formatAddress(order), items, quantity,
         formatTotal(order.amountTotal, order.currency), true, false, false, false, "", false, ""
       ]] })
     });
+    const row = appended.updates?.updatedRange?.match(/![A-Z]+(\d+):/)?.[1];
+    if (!row) throw new Error("Google Sheets did not return the appended order row.");
+    await this.addCheckboxes(sheetId, Number(row));
     return true;
   }
 }
