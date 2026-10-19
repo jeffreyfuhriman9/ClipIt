@@ -6,7 +6,9 @@ export type SheetOrder = {
   sessionId: string;
   customerName: string | null;
   customerEmail: string;
-  address: { line1: string; line2: string | null; city: string; state: string | null; postalCode: string; country: string } | null;
+  // Stripe may return null for any individual address field, so preserve that
+  // information instead of making the webhook fail on a partially filled address.
+  address: { line1: string | null; line2: string | null; city: string | null; state: string | null; postalCode: string | null; country: string | null } | null;
   amountTotal: number | null;
   currency: string | null;
   lines: OrderLine[];
