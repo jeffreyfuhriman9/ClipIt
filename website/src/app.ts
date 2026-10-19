@@ -100,12 +100,15 @@ function parseFulfillmentOrderLines(metadata: Stripe.Metadata | null | undefined
     return values.flatMap((value) => {
       if (!value || typeof value !== "object") return [];
       const line = value as Record<string, unknown>;
+      const quantity = line.quantity;
+      const unitAmount = line.unitAmount;
       if (
         typeof line.productId !== "string" || typeof line.productName !== "string" ||
-        !Number.isInteger(line.quantity) || !Number.isInteger(line.unitAmount) ||
-        line.quantity <= 0 || line.unitAmount < 0
+        typeof quantity !== "number" || typeof unitAmount !== "number" ||
+        !Number.isInteger(quantity) || !Number.isInteger(unitAmount) ||
+        quantity <= 0 || unitAmount < 0
       ) return [];
-      return [{ productId: line.productId, productName: line.productName, quantity: line.quantity, unitAmount: line.unitAmount }];
+      return [{ productId: line.productId, productName: line.productName, quantity, unitAmount }];
     });
   } catch {
     return [];
@@ -602,7 +605,12 @@ export function createApp(dependencies: AppDependencies = {}) {
       return;
     }
     try {
-      const updated = await orderStore!.updateFulfillment(request.params.sessionId, parsed.data);
+      const sessionId = request.params.sessionId;
+      if (typeof sessionId !== "string") {
+        response.status(400).type("text").send("A valid order session ID is required.");
+        return;
+      }
+      const updated = await orderStore!.updateFulfillment(sessionId, parsed.data);
       if (!updated) {
         response.status(404).type("text").send("Order not found.");
         return;
