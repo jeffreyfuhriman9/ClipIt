@@ -240,7 +240,10 @@ export function createApp(dependencies: AppDependencies = {}) {
               // checkout metadata. Browser-provided cart prices and addresses are never used.
               const paidOrder = paidOrderFromSession(session, orderLines);
               await orderStore?.recordPaidOrder(paidOrder);
-              await googleSheetsOrderStore?.recordPaidOrder(paidOrder);
+              if (googleSheetsOrderStore) {
+                const added = await googleSheetsOrderStore.recordPaidOrder(paidOrder);
+                console.info(`Google Sheets fulfillment row ${added ? "added" : "already existed"}.`);
+              }
             }
             // Any future downstream side effect must remain idempotent because Stripe retries.
             await dependencies.onPaidOrder?.(session);

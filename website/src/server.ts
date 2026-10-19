@@ -9,6 +9,7 @@ if (!config.stripeSecretKey) {
 if (!config.stripeWebhookSecret) {
   console.warn("STRIPE_WEBHOOK_SECRET is missing; signed payment confirmation is disabled.");
 }
+console.info(`Google Sheets fulfillment is ${config.googleSheets ? "enabled" : "disabled"}.`);
 
 const app = createApp({ config });
 const server = app.listen(config.port, "0.0.0.0", () => {
