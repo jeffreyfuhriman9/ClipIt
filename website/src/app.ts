@@ -15,6 +15,7 @@ import { CartValidationError, validateCart } from "./services/cart.js";
 import { createStripeClient, type StripeClient } from "./services/stripe.js";
 import { createContactMailer, type ContactMailer } from "./services/contact.js";
 import { createOrderStore, paidOrderFromSession, type OrderLine, type OrderStore } from "./services/orders.js";
+import { createGoogleSheetsOrderStore, type GoogleSheetsOrderStore } from "./services/google-sheets.js";
 import {
   createReviewStore,
   ReviewClaimError,
@@ -39,6 +40,7 @@ type AppDependencies = {
     submit(token: string, values: { name: string; rating: number; body: string }, uploads: ReviewUpload[]): Promise<void>;
   };
   orderStore?: Pick<OrderStore, "recordPaidOrder" | "listOrders" | "updateFulfillment">;
+  googleSheetsOrderStore?: Pick<GoogleSheetsOrderStore, "recordPaidOrder">;
 };
 
 const contactSchema = z.object({
@@ -159,6 +161,7 @@ export function createApp(dependencies: AppDependencies = {}) {
   const contactMailer = dependencies.contactMailer ?? createContactMailer(config);
   const reviewStore = dependencies.reviewStore ?? createReviewStore(config);
   const orderStore = dependencies.orderStore ?? createOrderStore(config);
+  const googleSheetsOrderStore = dependencies.googleSheetsOrderStore ?? createGoogleSheetsOrderStore(config);
   const reviewMediaOrigin = config.reviews ? new URL(config.reviews.media.publicBaseUrl).origin : undefined;
   const app = express();
 
@@ -230,12 +233,14 @@ export function createApp(dependencies: AppDependencies = {}) {
               const claims = await reviewStore.recordPaidOrder(session.id, customerEmail, productIds);
               await sendReviewInvitations(config, customerEmail, claims);
             }
-            if (orderStore) {
+            if (orderStore || googleSheetsOrderStore) {
               const orderLines = parseFulfillmentOrderLines(session.metadata);
               if (!orderLines.length) throw new Error("Paid Checkout session is missing fulfillment line items.");
               // This persists only data from Stripe's signed event plus the server-created
               // checkout metadata. Browser-provided cart prices and addresses are never used.
-              await orderStore.recordPaidOrder(paidOrderFromSession(session, orderLines));
+              const paidOrder = paidOrderFromSession(session, orderLines);
+              await orderStore?.recordPaidOrder(paidOrder);
+              await googleSheetsOrderStore?.recordPaidOrder(paidOrder);
             }
             // Any future downstream side effect must remain idempotent because Stripe retries.
             await dependencies.onPaidOrder?.(session);

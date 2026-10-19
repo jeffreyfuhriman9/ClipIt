@@ -370,10 +370,22 @@ struct BLEDeviceView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if let commandError = bleVM.commandError {
-                Label(commandError, systemImage: "exclamationmark.triangle.fill")
-                    .font(.footnote)
-                    .foregroundStyle(Color.crimsonBlaze)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .top, spacing: 8) {
+                    Label(commandError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Color.crimsonBlaze)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer(minLength: 0)
+
+                    Button("OK") {
+                        bleVM.dismissCommandError()
+                    }
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(Color.cosmosBlue)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss button message")
+                }
             }
 
 // Conditional statements with helpful print statements based on clip transfer

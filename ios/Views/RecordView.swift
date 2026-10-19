@@ -144,12 +144,32 @@ struct RecordView: View {
                     VStack {
                         Spacer()
                         if let commandError = bleVM.commandError {
-                            Label(commandError, systemImage: "exclamationmark.triangle.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(12)
-                                .background(Color.crimsonBlaze, in: Capsule())
-                                .padding(.horizontal, 24)
+                            HStack(alignment: .center, spacing: 10) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 15, weight: .semibold))
+
+                                Text(commandError)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                Button("OK") {
+                                    bleVM.dismissCommandError()
+                                }
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color.crimsonBlaze)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(.white, in: Capsule())
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Dismiss button message")
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.leading, 14)
+                            .padding(.trailing, 7)
+                            .padding(.vertical, 7)
+                            .background(Color.crimsonBlaze, in: Capsule())
+                            .padding(.horizontal, 24)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                         if showClipSavedBanner {
                             HStack(spacing: 12) {
@@ -358,7 +378,7 @@ struct RecordView: View {
                         isRecording: recordingVM.cameraConfirmedRecording,
                         onRecordTap: { handleRecordTap() },
                         onClipItTap: { triggerClipIt() },
-                        clipItOffset: CGSize(width: -120, height: 0)
+                        clipItOffset: CGSize(width: -138, height: 0)
                     )
                     .padding(.trailing, 45)
                 } else {
@@ -366,7 +386,7 @@ struct RecordView: View {
                         isRecording: recordingVM.cameraConfirmedRecording,
                         onRecordTap: { handleRecordTap() },
                         onClipItTap: { triggerClipIt() },
-                        clipItOffset: CGSize(width: 120, height: 0)
+                        clipItOffset: CGSize(width: 138, height: 0)
                     )
                     .padding(.leading, 45)
                     Spacer()
@@ -490,6 +510,7 @@ struct RecordView: View {
                 }
             }
         )
+        .background(Color.black)
         .ignoresSafeArea()
     }
 
@@ -716,7 +737,7 @@ struct RecordView: View {
                 isRecording: recordingVM.cameraConfirmedRecording,
                 onRecordTap: { handleRecordTap() },
                 onClipItTap: { triggerClipIt() },
-                clipItOffset: CGSize(width: 0, height: -120)
+                clipItOffset: CGSize(width: 0, height: -138)
             )
             .offset(y: -50)
             .padding(.bottom, -10)
@@ -891,7 +912,7 @@ private struct RecordControlGroup: View {
                 ZStack {
                     Circle()
                         .fill(isRecording ? Color.crimsonBlaze : Color.white.opacity(0.2))
-                        .frame(width: 125, height: 125)
+                        .frame(width: 145, height: 145)
                         .overlay(
                             Circle()
                                 .stroke(Color.white.opacity(isRecording ? 0.4 : 0.2), lineWidth: 2)
@@ -899,7 +920,7 @@ private struct RecordControlGroup: View {
                         .shadow(color: isRecording ? Color.crimsonBlaze.opacity(0.6) : .clear, radius: 10, y: 4)
 
                     Text("ClipIt")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
                         .foregroundColor(isRecording ? .white : .white.opacity(0.5))
                 }
                 // Measure the visible circle before the button is offset away

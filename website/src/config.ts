@@ -33,6 +33,13 @@ const envSchema = z.object({
   CONTACT_TO_EMAIL: z.string().email().default("support@clipitbutton.com"),
   ORDER_DATABASE_URL: optionalText,
   FULFILLMENT_ADMIN_PASSWORD: optionalText,
+  GOOGLE_SHEETS_SPREADSHEET_ID: optionalText,
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().email().optional()
+  ),
+  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: optionalText,
+  GOOGLE_SHEETS_TAB_NAME: z.string().trim().min(1).max(100).default("Orders"),
   DATABASE_URL: optionalText,
   REVIEW_MEDIA_BUCKET: optionalText,
   REVIEW_MEDIA_REGION: z.string().default("auto"),
@@ -82,6 +89,12 @@ export type AppConfig = {
   orders?: {
     databaseUrl: string;
     adminPassword: string;
+  };
+  googleSheets?: {
+    spreadsheetId: string;
+    serviceAccountEmail: string;
+    serviceAccountPrivateKey: string;
+    tabName: string;
   };
   reviews?: {
     databaseUrl: string;
@@ -139,6 +152,17 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error("FULFILLMENT_ADMIN_PASSWORD must be at least 24 characters.");
   }
 
+  const googleSheetsValues = [
+    parsed.data.GOOGLE_SHEETS_SPREADSHEET_ID,
+    parsed.data.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    parsed.data.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+  ];
+  if (googleSheetsValues.some(Boolean) && !googleSheetsValues.every(Boolean)) {
+    throw new Error(
+      "Configure GOOGLE_SHEETS_SPREADSHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL, and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY together, or omit all of them to disable Google Sheets fulfillment."
+    );
+  }
+
   const reviewValues = [
     parsed.data.DATABASE_URL,
     parsed.data.REVIEW_MEDIA_BUCKET,
@@ -177,6 +201,15 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       ? {
           databaseUrl: parsed.data.ORDER_DATABASE_URL!,
           adminPassword: parsed.data.FULFILLMENT_ADMIN_PASSWORD!
+      }
+      : undefined,
+    googleSheets: googleSheetsValues.every(Boolean)
+      ? {
+          spreadsheetId: parsed.data.GOOGLE_SHEETS_SPREADSHEET_ID!,
+          serviceAccountEmail: parsed.data.GOOGLE_SERVICE_ACCOUNT_EMAIL!,
+          // Render environment variables keep literal "\\n" characters; Node needs real line breaks.
+          serviceAccountPrivateKey: parsed.data.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY!.replace(/\\n/g, "\n"),
+          tabName: parsed.data.GOOGLE_SHEETS_TAB_NAME
         }
       : undefined,
     reviews: reviewValues.every(Boolean)

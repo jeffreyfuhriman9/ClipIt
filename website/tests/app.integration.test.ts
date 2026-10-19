@@ -310,6 +310,35 @@ describe("Stripe webhook validation", () => {
     }));
   });
 
+  it("adds a Stripe-verified paid order to the configured Google Sheet store", async () => {
+    const stripe = stripeMock({
+      constructEvent: vi.fn().mockReturnValue({
+        id: "evt_google_sheet",
+        type: "checkout.session.completed",
+        data: { object: {
+          id: "cs_test_google_sheet",
+          payment_status: "paid",
+          amount_total: 4499,
+          currency: "usd",
+          customer_details: {
+            name: "Taylor Customer",
+            email: "buyer@example.com",
+            address: { line1: "123 Test Street", line2: null, city: "Boise", state: "ID", postal_code: "83702", country: "US" }
+          },
+          metadata: { fulfillmentOrderLines: '[{"productId":"clipit-button-placeholder","productName":"The ClipIt Button","quantity":1,"unitAmount":4499}]' }
+        } }
+      }) as StripeClient["webhooks"]["constructEvent"]
+    });
+    const recordPaidOrder = vi.fn().mockResolvedValue(true);
+    const app = createApp({ config, stripe: stripe.client, googleSheetsOrderStore: { recordPaidOrder } });
+    await request(app).post("/webhooks/stripe").set("Content-Type", "application/json").set("stripe-signature", "valid").send("{}").expect(200);
+    expect(recordPaidOrder).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "cs_test_google_sheet",
+      customerEmail: "buyer@example.com",
+      lines: [{ productId: "clipit-button-placeholder", productName: "The ClipIt Button", quantity: 1, unitAmount: 4499 }]
+    }));
+  });
+
   it("asks Stripe to retry when downstream order handling fails", async () => {
     const stripe = stripeMock();
     const app = createApp({

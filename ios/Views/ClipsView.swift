@@ -115,6 +115,29 @@ struct ClipsView: View {
         let count = selectedClipIDs.count
         return "\(count) \(count == 1 ? "clip" : "clips") selected"
     }
+
+    private var selectedDeleteBorderColor: Color {
+        let selectedClips = recordingVM.sessions
+            .flatMap(\.clips)
+            .filter { selectedClipIDs.contains($0.id) }
+        let kinds = Set(selectedClips.map { clip in
+            clip.isReel ? "reel" : (clip.highlightIndex == nil ? "original" : "highlight")
+        })
+
+        guard kinds.count == 1, let kind = kinds.first else { return .gochujangRed }
+        switch kind {
+        case "original": return .cosmosBlue
+        case "reel": return .blueMarble
+        default: return .crimsonBlaze
+        }
+    }
+
+    private var sessionDeleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { sessionToDelete != nil },
+            set: { if !$0 { sessionToDelete = nil } }
+        )
+    }
     
     private var dynamicColumns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
@@ -282,8 +305,24 @@ struct ClipsView: View {
                         layoutTracker.update(
                             snapshot,
                             using: scrollProxy,
-                            applyOffsetAdjustment: { scrollOffsetAdjustment = $0 },
-                            requestLayoutRefresh: { layoutRefreshToken &+= 1 }
+                            // A Geometry preference is being evaluated on this
+                            // render pass. Apply any corrective state change on
+                            // the next pass so the correction cannot trigger a
+                            // second preference update in the same frame.
+                            applyOffsetAdjustment: { adjustment in
+                                DispatchQueue.main.async {
+                                    withTransaction(Transaction(animation: nil)) {
+                                        scrollOffsetAdjustment = adjustment
+                                    }
+                                }
+                            },
+                            requestLayoutRefresh: {
+                                DispatchQueue.main.async {
+                                    withTransaction(Transaction(animation: nil)) {
+                                        layoutRefreshToken &+= 1
+                                    }
+                                }
+                            }
                         )
                     }
                     .onAppear {
@@ -408,27 +447,25 @@ struct ClipsView: View {
                         selectionBottomBar
                     }
                 }
-                .alert("Delete Selected Clips?", isPresented: $showDeleteConfirmation) {
-                    Button("Cancel", role: .cancel) { }
-                    Button("Delete", role: .destructive) {
-                        deleteSelectedClips()
-                    }
-                } message: {
-                    Text("Are you sure you want to delete \(selectedClipIDs.count) clip(s)? This action cannot be undone.")
-                }
-                .alert(item: $sessionToDelete) { session in
-                    Alert(
-                        title: Text("Delete \"\(session.name)\"?"),
-                        message: Text("This will permanently remove this session and all associated clips."),
-                        primaryButton: .destructive(Text("Delete")) {
-                            recordingVM.deleteSession(id: session.id)
-                            sessionToDelete = nil
-                        },
-                        secondaryButton: .cancel {
-                            sessionToDelete = nil
+                .clipItDeleteConfirmation(
+                    isPresented: $showDeleteConfirmation,
+                    title: "Delete Selected Clips?",
+                    message: "Are you sure you want to delete \(selectedClipIDs.count) clip(s)? This action cannot be undone.",
+                    borderColor: selectedDeleteBorderColor,
+                    onDelete: deleteSelectedClips
+                )
+                .clipItDeleteConfirmation(
+                    isPresented: sessionDeleteConfirmationPresented,
+                    title: "Delete \"\(sessionToDelete?.name ?? "this session")\"?",
+                    message: "This will permanently remove this session and all associated clips.",
+                    borderColor: .gochujangRed,
+                    onDelete: {
+                        if let sessionToDelete {
+                            recordingVM.deleteSession(id: sessionToDelete.id)
                         }
-                    )
-                }
+                        sessionToDelete = nil
+                    }
+                )
                 .sheet(item: $sessionBeingRenamed) { session in
                     RenameSessionSheet(
                         sessionName: session.name,
@@ -787,6 +824,104 @@ struct ClipsView: View {
             .id
     }
 
+}
+
+/// ClipIt-branded destructive confirmation. A system `Alert` cannot tint its
+/// border or actions, so this stays visually tied to the clip being deleted.
+struct ClipItDeleteConfirmationModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let title: String
+    let message: String
+    let borderColor: Color
+    let onDelete: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if isPresented {
+                    ZStack {
+                        Color.black.opacity(0.38)
+                            .ignoresSafeArea()
+                            .onTapGesture { isPresented = false }
+
+                        VStack(spacing: 14) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 25, weight: .semibold))
+                                .foregroundStyle(borderColor)
+
+                            Text(title)
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(Color.cosmosBlue)
+                                .multilineTextAlignment(.center)
+
+                            Text(message)
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+
+                            HStack(spacing: 12) {
+                                Button {
+                                    isPresented = false
+                                } label: {
+                                    Text("Cancel")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(Color.cosmosBlue)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                        .contentShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .background(Color.cosmosBlue.opacity(0.10), in: Capsule())
+                                .contentShape(Capsule())
+
+                                Button {
+                                    onDelete()
+                                    isPresented = false
+                                } label: {
+                                    Text("Delete")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                        .contentShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .background(borderColor, in: Capsule())
+                                .contentShape(Capsule())
+                            }
+                        }
+                        .padding(24)
+                        .frame(maxWidth: 340)
+                        .background(Color(UIColor.systemBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .stroke(borderColor, lineWidth: 2)
+                        }
+                        .shadow(color: .black.opacity(0.22), radius: 20, y: 8)
+                        .padding(.horizontal, 24)
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    .zIndex(100)
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: isPresented)
+    }
+}
+
+extension View {
+    func clipItDeleteConfirmation(
+        isPresented: Binding<Bool>,
+        title: String,
+        message: String,
+        borderColor: Color,
+        onDelete: @escaping () -> Void
+    ) -> some View {
+        modifier(ClipItDeleteConfirmationModifier(
+            isPresented: isPresented,
+            title: title,
+            message: message,
+            borderColor: borderColor,
+            onDelete: onDelete
+        ))
+    }
 }
 
 private struct LibraryScrollLayoutSnapshot: Equatable {
@@ -1278,7 +1413,14 @@ private actor GalleryThumbnailRenderLimiter {
 }
 
 private enum GalleryThumbnailCache {
-    nonisolated(unsafe) static let images = NSCache<NSURL, UIImage>()
+    nonisolated(unsafe) static let images: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        // High-resolution frames look sharp in the three-column grid, but
+        // keep their in-memory footprint bounded for long recording days.
+        cache.countLimit = 40
+        cache.totalCostLimit = 80 * 1024 * 1024
+        return cache
+    }()
 
     static func image(for url: URL) -> UIImage? {
         images.object(forKey: url as NSURL)
@@ -1302,7 +1444,10 @@ private enum GalleryThumbnailCache {
             let seconds = duration.seconds > 0 ? duration.seconds / 2 : 0.5
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 300, height: 435)
+            // 300 px was visibly upscaled by the square grid on Retina
+            // phones/iPads. A 900 px long edge stays crisp while still being
+            // much smaller than decoding a full camera frame.
+            generator.maximumSize = CGSize(width: 900, height: 900)
 
             guard let cgImage = try? generator.copyCGImage(
                 at: CMTime(seconds: seconds, preferredTimescale: 600),
@@ -1310,7 +1455,8 @@ private enum GalleryThumbnailCache {
             ) else { return nil }
 
             let image = UIImage(cgImage: cgImage)
-            images.setObject(image, forKey: url as NSURL)
+            let imageCost = cgImage.width * cgImage.height * 4
+            images.setObject(image, forKey: url as NSURL, cost: imageCost)
             return image
         }.value
         await GalleryThumbnailRenderLimiter.shared.release()

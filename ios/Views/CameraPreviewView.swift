@@ -34,6 +34,19 @@ final class PreviewUIView: UIView {
         layer as! AVCaptureVideoPreviewLayer
     }
 
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        // The capture layer has no image until its first camera frame arrives.
+        // Keep that startup gap black instead of exposing the host view's
+        // default light background.
+        backgroundColor = .black
+        previewLayer.backgroundColor = UIColor.black.cgColor
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         previewLayer.frame = bounds

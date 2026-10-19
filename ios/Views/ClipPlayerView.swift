@@ -25,6 +25,11 @@ struct ClipPagerView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var isDraggingVertically = false
     @State private var verticalDismissGestureWasLocked = false
+    // Deletion is intentionally staged: Photos first makes the current item
+    // feel like it is leaving the canvas, then moves to its neighbor.
+    @State private var deletingClipID: UUID?
+    @State private var deletionScale: CGFloat = 1.0
+    @State private var deletionOpacity: Double = 1.0
     
     init(
         clips: [Clip],
@@ -73,6 +78,12 @@ struct ClipPagerView: View {
                 .opacity(backdropOpacity)
                 .ignoresSafeArea()
 
+            // The white canvas becomes visible around the minimized player,
+            // rather than briefly exposing the black player backdrop.
+            Color.white
+                .opacity(deletingClipID == nil ? 0 : 1)
+                .ignoresSafeArea()
+
             // Paging Horizontal View
             TabView(selection: $selectedClipID) {
                 ForEach(pagedClips) { clip in
@@ -92,6 +103,8 @@ struct ClipPagerView: View {
                         onRename: { newName in onRename(clip, newName) }
                     )
                     .tag(clip.id)
+                    .scaleEffect(clip.id == deletingClipID ? deletionScale : 1)
+                    .opacity(clip.id == deletingClipID ? deletionOpacity : 1)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -155,23 +168,44 @@ struct ClipPagerView: View {
     }
 
     private func deleteAndAdvance(from clip: Clip) {
+        guard deletingClipID == nil else { return }
         guard let index = pagedClips.firstIndex(where: { $0.id == clip.id }) else { return }
         let nextClip = pagedClips.indices.contains(index + 1)
             ? pagedClips[index + 1]
             : (index > 0 ? pagedClips[index - 1] : nil)
 
         if let nextClip {
-            // Switch the pager away from the clip before its file is removed
-            // from the library. Removing the file first briefly left the old
-            // player alive with no AVPlayer, exposing its unavailable state.
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                selectedClipID = nextClip.id
-                pagedClips.remove(at: index)
+            deletingClipID = clip.id
+
+            // Stage 1: briefly minimize the item against a white surface.
+            // Keeping it partially visible makes the following page swipe
+            // read as one continuous, Photos-style deletion action.
+            withAnimation(.easeOut(duration: 0.18)) {
+                deletionScale = 0.82
+                deletionOpacity = 0.72
             }
-            DispatchQueue.main.async {
-                onDelete(clip)
+
+            // Stage 2: retain the existing TabView paging behavior after the
+            // outgoing item has clearly begun to leave the screen.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    selectedClipID = nextClip.id
+                }
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
+                guard let currentIndex = pagedClips.firstIndex(where: { $0.id == clip.id }) else { return }
+                var removalTransaction = Transaction()
+                removalTransaction.disablesAnimations = true
+                withTransaction(removalTransaction) {
+                    _ = pagedClips.remove(at: currentIndex)
+                    deletingClipID = nil
+                    deletionScale = 1.0
+                    deletionOpacity = 1.0
+                }
+                DispatchQueue.main.async {
+                    onDelete(clip)
+                }
             }
         } else {
             stopCurrentPlayback()
@@ -235,6 +269,7 @@ struct ClipPlayerView: View {
     @State private var showDeletionWarning = false
     @State private var editUnavailableMessage = ""
     @State private var wasPlayingBeforeBackground = false
+    @State private var shouldResumeAfterTransientInactive = false
     @State private var controlsAutoHideTask: Task<Void, Never>?
     // The root player deliberately fills the entire display, so SwiftUI's
     // GeometryReader sees zero safe-area insets. These values come from the
@@ -262,12 +297,20 @@ struct ClipPlayerView: View {
     }
     
     private var deleteAlertTitle: String {
-        playerVM.clip.highlightIndex == nil ? "Delete Full Recording?" : "Delete Highlight?"
+        if playerVM.clip.isReel {
+            return "Delete Reel?"
+        } else if playerVM.clip.highlightIndex == nil {
+            return "Delete Original Video?"
+        } else {
+            return "Delete Highlight?"
+        }
     }
     
     private var deleteAlertMessage: String {
-        if playerVM.clip.highlightIndex == nil {
-            return "You will not be able to edit individual highlights after deleting the full recording."
+        if playerVM.clip.isReel {
+            return "Are you sure you want to permanently delete this reel?"
+        } else if playerVM.clip.highlightIndex == nil {
+            return "You will not be able to edit individual highlights after deleting the original recording video."
         } else {
             return "Are you sure you want to permanently delete this highlight?"
         }
@@ -770,18 +813,32 @@ struct ClipPlayerView: View {
     }
     
     private func performActionOnPhaseChange(oldPhase: ScenePhase, newPhase: ScenePhase) {
-        // Rotation can briefly move a scene through `.inactive`. Only a true
-        // background transition should pause playback; otherwise rotation
-        // leaves the video paused while its icon still says Pause.
-        if newPhase == .active {
-            if oldPhase == .background && isActive && wasPlayingBeforeBackground {
+        // Interface rotation briefly transitions the scene through .inactive.
+        // AVPlayer may pause during that transition on some devices, even
+        // though we never asked it to. Preserve whether the user was watching
+        // and explicitly resume once the scene is active again. A video that
+        // was manually paused remains paused.
+        switch newPhase {
+        case .inactive:
+            shouldResumeAfterTransientInactive = isActive && playerVM.isPlaying
+
+        case .background:
+            wasPlayingBeforeBackground = playerVM.isPlaying
+            shouldResumeAfterTransientInactive = false
+            playerVM.pause()
+
+        case .active:
+            let shouldResume = isActive && (wasPlayingBeforeBackground || shouldResumeAfterTransientInactive)
+            wasPlayingBeforeBackground = false
+            shouldResumeAfterTransientInactive = false
+            if shouldResume {
                 DispatchQueue.main.async {
                     self.playerVM.playWhenReady()
                 }
             }
-        } else if newPhase == .background {
-            wasPlayingBeforeBackground = playerVM.isPlaying
-            playerVM.pause()
+
+        @unknown default:
+            break
         }
     }
 }
@@ -867,6 +924,16 @@ private struct ClipPlayerAlertsModifier: ViewModifier {
     var onRename: ((String) -> Void)?
     let onTrimSaved: ((Clip) -> Void)?
     let onDelete: (() -> Void)?
+
+    private var deleteBorderColor: Color {
+        if playerVM.clip.isReel {
+            return .blueMarble
+        } else if playerVM.clip.highlightIndex != nil {
+            return .crimsonBlaze
+        } else {
+            return .cosmosBlue
+        }
+    }
     
     func body(content: Content) -> some View {
         content
@@ -886,15 +953,19 @@ private struct ClipPlayerAlertsModifier: ViewModifier {
             .presentationDetents([.height(290)])
             .presentationDragIndicator(.visible)
         }
-        .alert(deleteAlertTitle, isPresented: $showDeleteConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) {
-                playerVM.stop()
+        .clipItDeleteConfirmation(
+            isPresented: $showDeleteConfirmation,
+            title: deleteAlertTitle,
+            message: deleteAlertMessage,
+            borderColor: deleteBorderColor,
+            onDelete: {
+                // Pause immediately, but keep the AVPlayer/view alive until
+                // the pager has moved away so its unavailable placeholder is
+                // never exposed between clips.
+                playerVM.pause()
                 onDelete?()
             }
-        } message: {
-            Text(deleteAlertMessage)
-        }
+        )
         .alert("Edit Unavailable", isPresented: $showDeletionWarning) {
             Button("OK", role: .cancel) { }
         } message: {

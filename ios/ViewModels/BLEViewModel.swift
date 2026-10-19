@@ -358,6 +358,12 @@ final class BLEViewModel: NSObject, ObservableObject {
         commandError = message
     }
 
+    /// User-facing button errors are presented by the app shell. Clearing the
+    /// shared value lets the user acknowledge the message from any tab.
+    func dismissCommandError() {
+        commandError = nil
+    }
+
     func reportClipTransferStatus(_ message: String) {
         lastClipTransferStatus = message
     }
