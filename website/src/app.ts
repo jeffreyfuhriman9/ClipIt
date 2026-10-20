@@ -301,7 +301,7 @@ export function createApp(dependencies: AppDependencies = {}) {
   app.get("/", async (_request, response, next) => {
     try {
       response.render("home", {
-        title: "ClipIt — Placeholder Storefront",
+        title: "ClipIt Storefront",
         featuredProducts: products.filter((product) => product.active),
         reviewSummaries: await loadReviewSummaries(),
         howItWorksVideoEmbedUrl: config.howItWorksVideoEmbedUrl,
