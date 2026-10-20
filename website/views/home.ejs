@@ -69,8 +69,21 @@
     <span class="eyebrow">Download the ClipIt app</span>
     <h2>The Button and app, designed to work together.</h2>
     <div class="store-buttons">
-      <a class="store-button" href="<%= appStoreUrl %>" rel="noopener">App Store <small>placeholder link</small></a>
-      <a class="store-button" href="<%= playStoreUrl %>" rel="noopener">Google Play <small>placeholder link</small></a>
+      <a class="store-button" href="<%= appStoreUrl %>" rel="noopener">
+        <svg class="store-icon store-icon-apple" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M16.69 12.13c-.03-2.31 1.89-3.43 1.98-3.49-1.08-1.57-2.76-1.79-3.35-1.81-1.41-.15-2.78.84-3.5.84-.73 0-1.84-.83-3.03-.8-1.53.02-2.96.9-3.75 2.27-1.62 2.8-.41 6.91 1.14 9.17.77 1.11 1.69 2.35 2.88 2.31 1.17-.05 1.6-.74 3.01-.74 1.4 0 1.81.74 3.02.71 1.25-.02 2.04-1.11 2.79-2.23.9-1.27 1.26-2.53 1.28-2.6-.03-.01-2.42-.92-2.47-3.63ZM14.49 5.39c.62-.78 1.05-1.84.93-2.89-.9.04-2.03.62-2.68 1.38-.58.68-1.1 1.78-.96 2.79 1.02.08 2.08-.52 2.71-1.28Z"/>
+        </svg>
+        <span class="store-button-copy">App Store <small>placeholder link</small></span>
+      </a>
+      <a class="store-button" href="<%= playStoreUrl %>" rel="noopener">
+        <svg class="store-icon store-icon-play" viewBox="0 0 24 24" aria-hidden="true">
+          <path class="play-green" d="M3.8 3.2 13.1 12 3.8 20.8A2.1 2.1 0 0 1 3 19.2V4.8c0-.63.28-1.2.8-1.6Z"/>
+          <path class="play-blue" d="m13.1 12 2.96-2.8 3.2 1.78c1.07.6 1.07 1.84 0 2.44l-3.2 1.78L13.1 12Z"/>
+          <path class="play-yellow" d="m3.8 3.2 10.45 5.83L13.1 12 3.8 3.2Z"/>
+          <path class="play-red" d="m3.8 20.8 10.45-5.83L13.1 12 3.8 20.8Z"/>
+        </svg>
+        <span class="store-button-copy">Google Play <small>placeholder link</small></span>
+      </a>
     </div>
   </div>
 </section>

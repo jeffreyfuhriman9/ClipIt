@@ -50,8 +50,9 @@ img { display: block; max-width: 100%; }
 .skip-link:focus { transform: none; }
 .section-shell { width: var(--shell); margin-inline: auto; }
 .site-header {
-  width: var(--shell);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
+  padding-inline: max(20px, calc((100vw - 1180px) / 2));
   min-height: 84px;
   display: flex;
   justify-content: space-between;
@@ -150,8 +151,18 @@ h3 { font-size: 1.35rem; }
 .app-copy h2 { max-width: 560px; }
 .app-copy p { color: var(--ink-soft); font-size: 1.05rem; }
 .store-buttons { display: flex; gap: 12px; margin-top: 30px; }
-.store-button { padding: 12px 18px; border: 1px solid var(--ink); border-radius: 12px; text-decoration: none; font-weight: 800; line-height: 1.1; }
+.store-button { display: inline-flex; align-items: center; gap: 10px; padding: 12px 18px; border: 1px solid var(--ink); border-radius: 12px; text-decoration: none; font-weight: 800; line-height: 1.1; }
+.store-button:hover { color: var(--on-primary); background: var(--primary); }
+.store-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.store-icon { flex: 0 0 24px; width: 24px; height: 24px; fill: currentColor; }
+.store-icon-play { fill: none; }
+.store-icon-play .play-green { fill: #34a853; }
+.store-icon-play .play-blue { fill: #4285f4; }
+.store-icon-play .play-yellow { fill: #fbbc04; }
+.store-icon-play .play-red { fill: #ea4335; }
+.store-button-copy { display: block; }
 .store-button small { display: block; margin-top: 4px; color: var(--ink-soft); font-size: .62rem; }
+.store-button:hover small { color: var(--on-primary); }
 
 .page-intro { padding-block: 100px 50px; }
 .page-intro h1 { max-width: 970px; margin-bottom: 24px; }
@@ -289,6 +300,7 @@ h3 { font-size: 1.35rem; }
 
 @media (max-width: 850px) {
   :root { --shell: min(100% - 28px, 680px); }
+  .site-header { padding-inline: 14px; }
   .main-nav { gap: 9px; font-size: .72rem; white-space: nowrap; }
   .hero, .product-detail, .app-promo { grid-template-columns: 1fr; }
   .hero { padding-top: 70px; }
