@@ -26,7 +26,6 @@ export const products: Product[] = [
       { src: "/images/ClipIt_Product_5.png", alt: "ClipIt Button Product photo 5" },
       { src: "/images/ClipIt_Product_6.png", alt: "ClipIt Button Product photo 6" }
     ],
-    badge: "Placeholder product",
     features: [
       "Pair The ClipIt Button with the ClipIt companion app available on iOS and Android and start capturing your favorite clips.",
       "Up to 60+ ft of Bluetooth range",
@@ -38,16 +37,15 @@ export const products: Product[] = [
   {
     id: "clipit-bundle-placeholder",
     slug: "clipit-bundle",
-    name: "ClipIt Bundle — Placeholder Product",
-    shortDescription: "PLACEHOLDER: Add an approved bundle summary here.",
+    name: "The ClipIt Button & Tripod Bundle",
+    shortDescription: "Get the full setup now to start clipping your favorite moments.",
     description:
-      "PLACEHOLDER: Explain the bundle contents and value after the real offer is finalized.",
+      "Stop watching the game through your phone. Set up the tripod, hit record, and simply just hit that ClipIt Button included in this bundle!",
     priceCents: 7999,
     currency: "usd",
     image: "/images/bundle.png",
     imageAlt: "Placeholder artwork for a future ClipIt bundle",
     images: [{ src: "/images/bundle.png", alt: "Placeholder artwork for a future ClipIt bundle" }],
-    badge: "Example future listing",
     features: [
       "PLACEHOLDER: Bundle item one",
       "PLACEHOLDER: Bundle item two",

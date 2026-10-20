@@ -13,7 +13,7 @@
           <span class="star-display" aria-hidden="true"><%= "★".repeat(Math.round(reviewSummary.average)) %><span><%= "☆".repeat(5 - Math.round(reviewSummary.average)) %></span></span>
           <span>(<%= reviewSummary.count %> <%= reviewSummary.count === 1 ? "review" : "reviews" %>)</span>
         </a>
-        <span class="price"><%= formatMoney(product.priceCents, product.currency) %> <small>placeholder</small></span>
+        <span class="price"><%= formatMoney(product.priceCents, product.currency) %></span>
       </div>
       <button class="button button-small" type="button" data-add-to-cart="<%= product.id %>">Add to cart</button>
     </div>
