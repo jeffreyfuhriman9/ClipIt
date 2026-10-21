@@ -1,6 +1,9 @@
 <%- include('partials/head') %>
 
 <section class="hero">
+  <div class="hero-visual">
+    <img src="/images/logo_button1pf.jpg" alt="ClipIt Button alongside the ClipIt logo" width="4022" height="2597">
+  </div>
   <div class="hero-copy section-shell">
     <span class="eyebrow">Record. Clip. Relive.</span>
     <div class="button-row">
@@ -8,13 +11,6 @@
       <a class="text-link" href="#companion-app">Explore the companion app <span aria-hidden="true">→</span></a>
     </div>
   </div>
-  <div class="hero-visual">
-    <img src="/images/logo_button1pf.jpg" alt="ClipIt Button alongside the ClipIt logo" width="4022" height="2597">
-  </div>
-</section>
-
-<section class="marquee" aria-label="Placeholder product principles">
-  <span>RECORD</span><i></i><span>CLIP</span><i></i><span>RELIVE</span>
 </section>
 
 <section class="section-shell product-section">
@@ -29,6 +25,10 @@
       <%- include('partials/product-card', { product, reviewSummary: reviewSummaries[product.id] }) %>
     <% }) %>
   </div>
+</section>
+
+<section class="marquee" aria-label="ClipIt principles">
+  <span>RECORD</span><i></i><span>CLIP</span><i></i><span>RELIVE</span>
 </section>
 
 <section class="story-band">

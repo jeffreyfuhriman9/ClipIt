@@ -15,16 +15,14 @@ export const products: Product[] = [
       "The ultimate sports enthusiast accessory - The ClipIt Button. Allows parents, athletes, and coaches to keep their head in the game while also gathering their favorite highlights!",
     priceCents: 3999,
     currency: "usd",
-    image: "/images/ClipIt_Product_2.png",
-    imageAlt: "ClipIt Button Product Photo",
-    // Add approved product photos here after placing them in public/images/.
+    image: "/images/button1pf.png",
+    imageAlt: "ClipIt Button front and side view",
     // The product page automatically turns two or more entries into a swipeable gallery.
-    images: [{ src: "/images/ClipIt_Product_2.png", alt: "ClipIt Button Product main photo" },
-      { src: "/images/ClipIt_Product_1.png", alt: "ClipIt Button Product photo 1" },
-      { src: "/images/ClipIt_Product_3.png", alt: "ClipIt Button Product photo 3" },
-      { src: "/images/ClipIt_Product_4.png", alt: "ClipIt Button Product photo 4" },
-      { src: "/images/ClipIt_Product_5.png", alt: "ClipIt Button Product photo 5" },
-      { src: "/images/ClipIt_Product_6.png", alt: "ClipIt Button Product photo 6" }
+    images: [
+      { src: "/images/button1pf.png", alt: "ClipIt Button front and side view" },
+      { src: "/images/button4pf.png", alt: "ClipIt Button front view" },
+      { src: "/images/button3pf.png", alt: "ClipIt Button angled view" },
+      { src: "/images/button2pf.png", alt: "ClipIt Button back view" }
     ],
     features: [
       "Pair The ClipIt Button with the ClipIt companion app available on iOS and Android and start capturing your favorite clips.",
