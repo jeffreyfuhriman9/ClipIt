@@ -94,11 +94,11 @@ h3 { font-size: 1.35rem; }
 .button-row.centered { justify-content: center; }
 .text-link { color: var(--primary); font-weight: 800; text-underline-offset: 5px; }
 
-.hero { min-height: 750px; display: grid; grid-template-columns: 1.04fr 0.96fr; align-items: center; gap: 42px; padding-block: 64px 90px; }
-.hero h1 { max-width: 740px; margin-bottom: 28px; }
-.hero-visual { position: relative; }
-.hero-visual::before { content: ""; position: absolute; inset: 5% 5% 0 0; border-radius: 50% 50% 40% 60%; background: var(--support); transform: rotate(-4deg); }
-.hero-visual img { position: relative; width: 100%; height: auto; filter: drop-shadow(0 24px 26px rgba(0,48,73,.15)); }
+.hero { padding-bottom: 80px; }
+.hero-copy { padding-block: 52px 30px; }
+.hero .button-row { margin-top: 0; }
+.hero-visual { width: 100%; background: var(--surface-blue); }
+.hero-visual img { width: 100%; height: auto; }
 .placeholder-notice { margin-top: 28px; padding-left: 14px; border-left: 3px solid var(--accent); color: var(--ink-soft); font-size: 0.82rem; max-width: 540px; }
 .marquee { display: flex; justify-content: center; align-items: center; gap: clamp(20px, 4vw, 60px); padding: 22px 20px; overflow: hidden; background: var(--primary); color: white; font-size: 0.73rem; font-weight: 800; letter-spacing: .16em; white-space: nowrap; }
 .marquee i { width: 7px; height: 7px; border-radius: 50%; background: var(--support); }
@@ -302,10 +302,9 @@ h3 { font-size: 1.35rem; }
   :root { --shell: min(100% - 28px, 680px); }
   .site-header { padding-inline: 14px; }
   .main-nav { gap: 9px; font-size: .72rem; white-space: nowrap; }
-  .hero, .product-detail, .app-promo { grid-template-columns: 1fr; }
-  .hero { padding-top: 70px; }
-  .hero-copy { order: 1; }
-  .hero-visual { order: 0; max-width: 510px; margin-inline: auto; }
+  .product-detail, .app-promo { grid-template-columns: 1fr; }
+  .hero { padding-bottom: 60px; }
+  .hero-copy { padding-block: 34px 24px; }
   .product-grid { grid-template-columns: 1fr; }
   .story-grid, .how-it-works-grid { grid-template-columns: 1fr; gap: 20px; }
   .testimonials-heading { display: block; }
@@ -324,8 +323,9 @@ h3 { font-size: 1.35rem; }
 
 @media (max-width: 560px) {
   h1 { font-size: 3.1rem; }
-  .hero { min-height: auto; padding-block: 48px 70px; }
-  .marquee span:nth-of-type(3), .marquee i:nth-of-type(2) { display: none; }
+  .hero { padding-bottom: 48px; }
+  .marquee { gap: 16px; padding-inline: 12px; font-size: .67rem; letter-spacing: .11em; }
+  .marquee i { width: 5px; height: 5px; }
   .section-heading { display: block; }
   .section-heading .text-link { display: inline-block; margin-top: 20px; }
   .product-section, .app-promo { padding-block: 75px; }

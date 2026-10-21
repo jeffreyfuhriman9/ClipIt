@@ -20,9 +20,9 @@ export const products: Product[] = [
     // The product page automatically turns two or more entries into a swipeable gallery.
     images: [
       { src: "/images/button1pf.png", alt: "ClipIt Button front and side view" },
-      { src: "/images/button4pf.jpg", alt: "ClipIt Button front view" },
-      { src: "/images/button3pf.jpg", alt: "ClipIt Button angled view" },
-      { src: "/images/button2pf.jpg", alt: "ClipIt Button back view" }
+      { src: "/images/button4pf.png", alt: "ClipIt Button front view" },
+      { src: "/images/button3pf.png", alt: "ClipIt Button angled view" },
+      { src: "/images/button2pf.png", alt: "ClipIt Button back view" }
     ],
     features: [
       "Pair The ClipIt Button with the ClipIt companion app available on iOS and Android and start capturing your favorite clips.",
