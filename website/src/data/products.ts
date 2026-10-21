@@ -42,8 +42,11 @@ export const products: Product[] = [
     priceCents: 7999,
     currency: "usd",
     image: "/images/bundle.png",
-    imageAlt: "Placeholder artwork for a future ClipIt bundle",
-    images: [{ src: "/images/bundle.png", alt: "Placeholder artwork for a future ClipIt bundle" }],
+    imageAlt: "ClipIt Button next to an open tripod",
+    images: [
+      { src: "/images/bundle.png", alt: "ClipIt Button next to an open tripod" },
+      { src: "/images/bundle-accessories.png", alt: "Phone holder, folded tripod, and carry bag" }
+    ],
     features: [
       "Included in bundle: The ClipIt Button and Tripod",
       "PLACEHOLDER: Bundle item two",

@@ -94,9 +94,7 @@ h3 { font-size: 1.35rem; }
 .button-row.centered { justify-content: center; }
 .text-link { color: var(--primary); font-weight: 800; text-underline-offset: 5px; }
 
-.hero { padding-bottom: 80px; }
-.hero-copy { padding-block: 52px 30px; }
-.hero .button-row { margin-top: 0; }
+.hero { padding-bottom: 0; }
 .hero-visual { width: 100%; background: var(--surface-blue); }
 .hero-visual img { width: 100%; height: auto; }
 .placeholder-notice { margin-top: 28px; padding-left: 14px; border-left: 3px solid var(--accent); color: var(--ink-soft); font-size: 0.82rem; max-width: 540px; }
@@ -108,9 +106,9 @@ h3 { font-size: 1.35rem; }
 .section-heading h2 { max-width: 680px; margin-bottom: 0; }
 .product-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
 .product-card { overflow: hidden; border-radius: var(--radius); background: var(--paper); box-shadow: 0 1px 0 var(--line); }
-.product-image-link { display: grid; aspect-ratio: 1.18; place-items: center; overflow: hidden; background: var(--surface-blue); }
+.product-image-link { display: grid; aspect-ratio: 4 / 5; place-items: center; padding: 12px; overflow: hidden; background: var(--surface-blue); }
 .product-image { width: 100%; height: 100%; object-fit: contain; transition: transform 450ms cubic-bezier(.2,.8,.2,1); }
-.product-card:hover .product-image { transform: scale(1.025); }
+.product-card:hover .product-image { transform: none; }
 .product-card-body { padding: 28px; }
 .product-card h3 a { text-decoration: none; }
 .product-card p { color: var(--ink-soft); }
@@ -303,8 +301,7 @@ h3 { font-size: 1.35rem; }
   .site-header { padding-inline: 14px; }
   .main-nav { gap: 9px; font-size: .72rem; white-space: nowrap; }
   .product-detail, .app-promo { grid-template-columns: 1fr; }
-  .hero { padding-bottom: 60px; }
-  .hero-copy { padding-block: 34px 24px; }
+  .hero { padding-bottom: 0; }
   .product-grid { grid-template-columns: 1fr; }
   .story-grid, .how-it-works-grid { grid-template-columns: 1fr; gap: 20px; }
   .testimonials-heading { display: block; }
@@ -323,7 +320,7 @@ h3 { font-size: 1.35rem; }
 
 @media (max-width: 560px) {
   h1 { font-size: 3.1rem; }
-  .hero { padding-bottom: 48px; }
+  .hero { padding-bottom: 0; }
   .marquee { gap: 16px; padding-inline: 12px; font-size: .67rem; letter-spacing: .11em; }
   .marquee i { width: 5px; height: 5px; }
   .section-heading { display: block; }
