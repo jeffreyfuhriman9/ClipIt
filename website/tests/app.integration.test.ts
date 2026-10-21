@@ -280,14 +280,14 @@ describe("Stripe webhook validation", () => {
         data: { object: {
           id: "cs_test_fulfillment",
           payment_status: "paid",
-          amount_total: 4499,
+          amount_total: 3999,
           currency: "usd",
           customer_details: {
             name: "Taylor Customer",
             email: "buyer@example.com",
             address: { line1: "123 Test Street", line2: null, city: "Boise", state: "ID", postal_code: "83702", country: "US" }
           },
-          metadata: { fulfillmentOrderLines: '[{"productId":"clipit-button-placeholder","productName":"The ClipIt Button","quantity":1,"unitAmount":4499}]' }
+          metadata: { fulfillmentOrderLines: '[{"productId":"clipit-button-placeholder","productName":"The ClipIt Button","quantity":1,"unitAmount":3999}]' }
         } }
       }) as StripeClient["webhooks"]["constructEvent"]
     });
@@ -306,7 +306,7 @@ describe("Stripe webhook validation", () => {
     expect(recordPaidOrder).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "cs_test_fulfillment",
       customerEmail: "buyer@example.com",
-      lines: [{ productId: "clipit-button-placeholder", productName: "The ClipIt Button", quantity: 1, unitAmount: 4499 }]
+      lines: [{ productId: "clipit-button-placeholder", productName: "The ClipIt Button", quantity: 1, unitAmount: 3999 }]
     }));
   });
 
@@ -318,14 +318,14 @@ describe("Stripe webhook validation", () => {
         data: { object: {
           id: "cs_test_google_sheet",
           payment_status: "paid",
-          amount_total: 4499,
+          amount_total: 3999,
           currency: "usd",
           customer_details: {
             name: "Taylor Customer",
             email: "buyer@example.com",
             address: { line1: "123 Test Street", line2: null, city: "Boise", state: "ID", postal_code: "83702", country: "US" }
           },
-          metadata: { fulfillmentOrderLines: '[{"productId":"clipit-button-placeholder","productName":"The ClipIt Button","quantity":1,"unitAmount":4499}]' }
+          metadata: { fulfillmentOrderLines: '[{"productId":"clipit-button-placeholder","productName":"The ClipIt Button","quantity":1,"unitAmount":3999}]' }
         } }
       }) as StripeClient["webhooks"]["constructEvent"]
     });
@@ -335,7 +335,7 @@ describe("Stripe webhook validation", () => {
     expect(recordPaidOrder).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "cs_test_google_sheet",
       customerEmail: "buyer@example.com",
-      lines: [{ productId: "clipit-button-placeholder", productName: "The ClipIt Button", quantity: 1, unitAmount: 4499 }]
+      lines: [{ productId: "clipit-button-placeholder", productName: "The ClipIt Button", quantity: 1, unitAmount: 3999 }]
     }));
   });
 
@@ -368,14 +368,14 @@ describe("private fulfillment dashboard", () => {
     customerName: "Taylor Customer",
     customerEmail: "buyer@example.com",
     address: { line1: "123 Test Street", line2: null, city: "Boise", state: "ID", postalCode: "83702", country: "US" },
-    amountTotal: 4499,
+    amountTotal: 3999,
     currency: "usd",
     status: "paid" as const,
     carrier: null,
     trackingNumber: null,
     shippedAt: null,
     createdAt: "2026-10-15T00:00:00.000Z",
-    lines: [{ productId: "clipit-button-placeholder", productName: "The ClipIt Button", quantity: 1, unitAmount: 4499 }]
+    lines: [{ productId: "clipit-button-placeholder", productName: "The ClipIt Button", quantity: 1, unitAmount: 3999 }]
   };
 
   function fulfillmentStore() {

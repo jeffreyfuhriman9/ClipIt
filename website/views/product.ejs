@@ -29,7 +29,7 @@
       <span class="star-display" aria-hidden="true"><%= "★".repeat(Math.round(reviewData.summary.average)) %><span><%= "☆".repeat(5 - Math.round(reviewData.summary.average)) %></span></span>
       <span>(<%= reviewData.summary.count %> <%= reviewData.summary.count === 1 ? "review" : "reviews" %>)</span>
     </a>
-    <p class="detail-price"><%= formatMoney(product.priceCents, product.currency) %> <small>placeholder price</small></p>
+    <p class="detail-price"><%= formatMoney(product.priceCents, product.currency) %> </p>
     <p class="lede"><%= product.description %></p>
     <form class="add-form" data-add-form="<%= product.id %>">
       <label for="quantity">Quantity</label>
@@ -40,7 +40,7 @@
     </form>
     <div class="security-note">
       <span aria-hidden="true">◇</span>
-      <p><strong>Secure checkout by Stripe</strong><br>Payment details are entered on Stripe’s hosted checkout page, not this site.</p>
+      <p><strong>Secure checkout by Stripe</strong><br> </p>
     </div>
   </div>
 </section>
@@ -75,7 +75,7 @@
     </div>
   </div>
   <% if (!reviewData.reviews.length) { %>
-    <p class="no-reviews">No verified-purchase reviews yet. Customers receive a private review link after a completed purchase.</p>
+    <p class="no-reviews">No customer verified-purchase reviews yet.</p>
   <% } else { %>
     <div class="verified-review-list">
       <% reviewData.reviews.forEach((review) => { %>
