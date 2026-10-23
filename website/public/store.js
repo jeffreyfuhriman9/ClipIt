@@ -139,6 +139,7 @@ function setupContactForm() {
   const button = form.querySelector('button[type="submit"]');
   const error = form.querySelector("[data-contact-error]");
   const success = form.querySelector("[data-contact-success]");
+  const attachmentInput = form.querySelector("[data-contact-attachments]");
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -146,13 +147,23 @@ function setupContactForm() {
     success.hidden = true;
     button.disabled = true;
     button.textContent = "Sending…";
-    const data = Object.fromEntries(new FormData(form).entries());
+    if (!form.reportValidity()) return;
+    const attachments = Array.from(attachmentInput?.files || []);
+    const invalidAttachment = attachments.find((file) =>
+      !/^(image\\/(jpeg|png|webp)|application\\/pdf)$/.test(file.type) || file.size > 5 * 1024 * 1024
+    );
+    if (attachments.length > 3 || invalidAttachment) {
+      error.textContent = "Attach up to three JPG, PNG, WebP, or PDF files. Each file can be up to 5 MB.";
+      error.hidden = false;
+      return;
+    }
+    const data = new FormData(form);
 
     try {
       const response = await fetch("/api/contact", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(data)
+        headers: { Accept: "application/json" },
+        body: data
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "We could not send your message. Please try again.");

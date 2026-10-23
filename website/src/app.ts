@@ -6,6 +6,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import multer, { MulterError } from "multer";
+import { fileTypeFromBuffer } from "file-type";
 import type Stripe from "stripe";
 import { z } from "zod";
 import { loadConfig, type AppConfig } from "./config.js";
@@ -56,6 +57,15 @@ const contactSchema = z.object({
   // Bots often complete every input. Real visitors never see this field.
   website: z.string().max(1_000).optional().default("")
 });
+
+const contactAttachmentMimeTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"] as const;
+type ContactAttachmentMimeType = (typeof contactAttachmentMimeTypes)[number];
+const contactAttachmentLimit = 3;
+const contactAttachmentSizeLimit = 5 * 1024 * 1024;
+
+function isContactAttachmentMimeType(value: string): value is ContactAttachmentMimeType {
+  return contactAttachmentMimeTypes.includes(value as ContactAttachmentMimeType);
+}
 
 const reviewSchema = z.object({
   token: z.string().min(20, "This review link is invalid."),
@@ -455,7 +465,21 @@ export function createApp(dependencies: AppDependencies = {}) {
     message: { error: "Too many messages were sent from this connection. Please try again later." }
   });
 
-  app.post("/api/contact", contactLimiter, async (request, response, next) => {
+  const contactUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      files: contactAttachmentLimit,
+      fileSize: contactAttachmentSizeLimit,
+      fields: 6,
+      fieldSize: 6_000,
+      parts: 10
+    },
+    // MIME headers are supplied by the browser and are not trustworthy. Every
+    // accepted upload is verified against its file signature below instead.
+    fileFilter: (_request, _file, callback) => callback(null, true)
+  });
+
+  app.post("/api/contact", contactLimiter, contactUpload.array("attachments", contactAttachmentLimit), async (request, response, next) => {
     const parsed = contactSchema.safeParse(request.body);
     if (!parsed.success) {
       response.status(400).json({ error: parsed.error.issues[0]?.message ?? "Please check the form." });
@@ -474,7 +498,24 @@ export function createApp(dependencies: AppDependencies = {}) {
     }
 
     try {
-      await contactMailer.send(parsed.data);
+      const uploadedFiles = request.files;
+      const files = Array.isArray(uploadedFiles) ? uploadedFiles : [];
+      const attachments = [];
+      for (const file of files) {
+        // Do not trust the Content-Type claimed by the browser. The actual bytes
+        // must identify as the same safe format before the file reaches email.
+        const detected = await fileTypeFromBuffer(file.buffer);
+        if (!detected || !isContactAttachmentMimeType(detected.mime) || detected.mime !== file.mimetype) {
+          response.status(400).json({ error: "Attachments must be JPG, PNG, WebP, or PDF files." });
+          return;
+        }
+        attachments.push({
+          filename: file.originalname.replace(/[\\r\\n]/g, " ").slice(0, 160) || "attachment",
+          content: file.buffer,
+          contentType: detected.mime
+        });
+      }
+      await contactMailer.send({ ...parsed.data, attachments });
       // Never log visitor message bodies or email addresses.
       console.info("Contact form message delivered.");
       response.status(202).json({ received: true });
@@ -655,7 +696,16 @@ export function createApp(dependencies: AppDependencies = {}) {
     console.error("Request failed.", { path: request.path, detail });
     if (wantsJson(request)) {
       if (error instanceof MulterError) {
-        response.status(400).json({ error: error.code === "LIMIT_FILE_SIZE" ? "Each video can be up to 25 MB; each image can be up to 5 MB." : "You can upload up to five files." });
+        const isContactRequest = request.path === "/api/contact";
+        response.status(400).json({
+          error: isContactRequest
+            ? error.code === "LIMIT_FILE_SIZE"
+              ? "Each attachment can be up to 5 MB."
+              : "You can attach up to three files."
+            : error.code === "LIMIT_FILE_SIZE"
+              ? "Each video can be up to 25 MB; each image can be up to 5 MB."
+              : "You can upload up to five files."
+        });
         return;
       }
       response.status(500).json({

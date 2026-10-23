@@ -183,8 +183,25 @@ describe("contact form", () => {
       email: "taylor@example.com",
       subject: "Help with my ClipIt Button",
       message: "I would like help with a ClipIt product question.",
-      website: ""
+      website: "",
+      attachments: []
     });
+  });
+
+  it("accepts a safe contact attachment and passes it only to the server-side mailer", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createApp({ config, stripe: stripeMock().client, contactMailer: { send } });
+    await request(app)
+      .post("/api/contact")
+      .field("name", "Taylor Customer")
+      .field("email", "taylor@example.com")
+      .field("subject", "Photo of my ClipIt Button")
+      .field("message", "I would like help with this photo of my ClipIt Button.")
+      .attach("attachments", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), { filename: "button.png", contentType: "image/png" })
+      .expect(202, { received: true });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      attachments: [expect.objectContaining({ filename: "button.png", contentType: "image/png" })]
+    }));
   });
 
   it("silently accepts bot-trap submissions without delivering them", async () => {

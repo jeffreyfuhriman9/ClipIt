@@ -7,7 +7,7 @@
     <p class="lede">Have a question about ClipIt? Send a message and our team will reply by email.</p>
   </div>
 
-  <form class="contact-form" data-contact-form novalidate>
+  <form class="contact-form" data-contact-form novalidate enctype="multipart/form-data">
     <div class="form-grid">
       <label>
         Name
@@ -26,12 +26,17 @@
       Message
       <textarea name="message" rows="7" maxlength="5000" required></textarea>
     </label>
+    <label>
+      Attachments <span class="field-hint">Optional — up to 3 JPG, PNG, WebP, or PDF files, 5 MB each.</span>
+      <input name="attachments" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple data-contact-attachments aria-describedby="contact-attachment-help">
+      <span class="field-hint" id="contact-attachment-help">For example, send a photo, screenshot, or receipt. Files are sent only to ClipIt Support.</span>
+    </label>
     <div class="honeypot" aria-hidden="true">
       <label>Website <input name="website" type="text" tabindex="-1" autocomplete="off"></label>
     </div>
     <button class="button" type="submit">Send message</button>
     <p class="form-error" data-contact-error role="alert" hidden></p>
-    <p class="form-success" data-contact-success role="status" hidden>Thanks—your message has been sent. We’ll reply to the email you provided.</p>
+    <p class="form-success" data-contact-success role="status" hidden>Thanks—your message and any attachments have been sent. We’ll reply to the email you provided.</p>
   </form>
 </section>
 

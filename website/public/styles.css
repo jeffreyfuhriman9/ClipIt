@@ -262,6 +262,8 @@ h3 { font-size: 1.35rem; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
 .contact-form > label { margin-top: 18px; }
 .contact-form input, .contact-form textarea { width: 100%; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); resize: vertical; }
+.contact-form input[type="file"] { padding: 10px; font: inherit; }
+.field-hint { color: var(--ink-soft); font-size: .78rem; font-weight: 500; line-height: 1.45; }
 .contact-form button { margin-top: 22px; }
 .honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .form-success { margin: 18px 0 0; padding: 12px; border-radius: 10px; background: var(--success-surface); color: var(--primary); font-weight: 700; }

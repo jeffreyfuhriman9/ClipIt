@@ -6,6 +6,11 @@ export type ContactMessage = {
   email: string;
   subject: string;
   message: string;
+  attachments: Array<{
+    filename: string;
+    content: Buffer;
+    contentType: "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
+  }>;
 };
 
 export type ContactMailer = {
@@ -44,6 +49,14 @@ export function createContactMailer(config: AppConfig): ContactMailer | undefine
           "Message:",
           message.message
         ].join("\n"),
+        // Attachments are accepted only after the route validates their count,
+        // size, MIME type, and file signature. Passing an in-memory Buffer means
+        // Nodemailer never reads a path or URL supplied by a visitor.
+        attachments: message.attachments.map((attachment) => ({
+          filename: attachment.filename,
+          content: attachment.content,
+          contentType: attachment.contentType
+        })),
         // Disable file/URL access so visitors cannot coerce the mailer into reading server files.
         disableFileAccess: true,
         disableUrlAccess: true
