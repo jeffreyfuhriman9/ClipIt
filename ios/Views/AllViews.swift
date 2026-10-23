@@ -201,6 +201,15 @@ struct BLEDeviceView: View {
     @EnvironmentObject private var tutorial: TutorialController
     @State private var showingRenameButton = false
     @State private var proposedButtonName = ""
+    @State private var showingButtonInfo = false
+    @State private var buttonEducationSlide = 0
+    @State private var isProductPhotoPulsing = false
+
+    private let buttonEducationSlides: [(image: String, detail: String)] = [
+        ("ClipItSetupIllustration", "Place your phone on a tripod and hold the ClipIt Button for 3 seconds to start and stop recording."),
+        ("ClipItTapIllustration", "Press your ClipIt Button remotely when a great clip happens, without touching your phone!"),
+        ("ClipItSavedIllustration", "Your highlights are saved automatically and ready in your ClipIt Library after recording.")
+    ]
 
     private var isConnected: Bool { bleVM.bleState.isConnected }
     private var isConnecting: Bool {
@@ -216,9 +225,9 @@ struct BLEDeviceView: View {
             return "Connecting..."
         case .scanning:
             if bleVM.isWaitingForManualButtonSelection {
-                return "Turn on your ClipIt Button and find it in the nearby buttons list below."
+                return "Turn on ClipIt Button to begin pairing."
             }
-            return "Turn on your ClipIt Button and find it in the nearby buttons list below."
+            return "Turn on ClipIt Button to begin pairing."
         case .poweredOff:
             return ""
         case .disconnected:
@@ -244,30 +253,37 @@ struct BLEDeviceView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    statusCard
-                        .tutorialTarget(.device)
+        ZStack {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        statusCard
+                            .tutorialTarget(.device)
 
-                    if !isConnected {
-                        connectionSection
+                        if !isConnected {
+                            connectionSection
+                        }
+
+                        settingsCard
                     }
-
-                    settingsCard
+                    .frame(maxWidth: 560)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: 560)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 24)
-                .frame(maxWidth: .infinity)
+                .background(Color(UIColor.systemGroupedBackground))
+                .navigationTitle("Device")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbarTitleDisplayMode(.large)
             }
-            .background(Color(UIColor.systemGroupedBackground))
-            .navigationTitle("Device")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbarTitleDisplayMode(.large)
+
+            if showingButtonInfo {
+                buttonEducationWindow
+            }
         }
         .onAppear {
             scanForNearbyButtonsIfNeeded()
+            updateProductPhotoPulse()
         }
         .onChange(of: isSelected) { _, _ in
             // TabView keeps each tab alive. Start a fresh discovery pass when
@@ -280,6 +296,7 @@ struct BLEDeviceView: View {
             if case .disconnected = state {
                 scanForNearbyButtonsIfNeeded()
             }
+            updateProductPhotoPulse()
         }
         .alert("Rename ClipIt Button", isPresented: $showingRenameButton) {
             TextField("Button name", text: $proposedButtonName)
@@ -303,41 +320,50 @@ struct BLEDeviceView: View {
         bleVM.startScanning()
     }
 
+    private func updateProductPhotoPulse() {
+        guard !isConnected else {
+            withAnimation(.easeOut(duration: 0.2)) {
+                isProductPhotoPulsing = false
+            }
+            return
+        }
+
+        isProductPhotoPulsing = false
+        DispatchQueue.main.async {
+            guard !isConnected else { return }
+            withAnimation(.easeInOut(duration: 1.35).repeatForever(autoreverses: true)) {
+                isProductPhotoPulsing = true
+            }
+        }
+    }
+
     private var statusCard: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .top, spacing: 16) {
-                Image(systemName: "button.programmable.square")
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(isConnected ? Color.green : Color.crimsonBlaze)
-                    .frame(width: 64, height: 64)
-                    .background(
-                        (isConnected ? Color.green : Color.crimsonBlaze).opacity(0.12),
-                        in: RoundedRectangle(cornerRadius: 18)
-                    )
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 4) {
+                Text(bleVM.currentButtonName)
+                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.cosmosBlue)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .center, spacing: 4) {
-                        Text(bleVM.currentButtonName)
-                            .font(.system(size: 21, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.cosmosBlue)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        if bleVM.connectedButtonID != nil {
-                            Button {
-                                beginRenaming()
-                            } label: {
-                                Image(systemName: "pencil")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .frame(width: 36, height: 36)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Color.crimsonBlaze)
-                            .accessibilityLabel("Rename \(bleVM.currentButtonName)")
-                        }
+                if bleVM.connectedButtonID != nil {
+                    Button {
+                        beginRenaming()
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.crimsonBlaze)
+                    .accessibilityLabel("Rename \(bleVM.currentButtonName)")
+                }
 
+                Spacer(minLength: 0)
+            }
+
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 7) {
                         if bleVM.bleState.isConnected {
                             Image(systemName: "link")
@@ -354,112 +380,117 @@ struct BLEDeviceView: View {
                     .padding(.horizontal, 11)
                     .padding(.vertical, 8)
                     .background(statusColor.opacity(0.11), in: Capsule())
-// Button ID printed
-//                    if let buttonID = bleVM.connectedButtonID {
-//                        Text("Button ID \(String(buttonID.uuidString.suffix(4)))")
-//                            .font(.caption)
-//                            .foregroundStyle(.secondary)
-//                    }
+
+                Text(statusDetail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let commandError = bleVM.commandError {
+                    HStack(alignment: .top, spacing: 8) {
+                        Label(commandError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(Color.crimsonBlaze)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Spacer(minLength: 0)
+
+                        Button("OK") {
+                            bleVM.dismissCommandError()
+                        }
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(Color.cosmosBlue)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss button message")
+                    }
+                }
+
+                if isConnected {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.08))
+                        .frame(height: 1)
+
+                    HStack(spacing: 12) {
+                        if let batteryLevel = bleVM.remoteBatteryLevel {
+                            Image(systemName: batteryIcon(for: batteryLevel))
+                                .font(.system(size: 22))
+                                .foregroundStyle(batteryColor(for: batteryLevel))
+                                .frame(width: 32)
+                        } else {
+                            ProgressView()
+                                .tint(.blueMarble)
+                                .frame(width: 32)
+                        }
+
+                        Text("Button battery")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        Text(bleVM.remoteBatteryLevel.map { "\($0)%" } ?? "Checking…")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.cosmosBlue)
+                    }
+                    .accessibilityElement(children: .combine)
+
+                    if bleVM.remoteBatteryCharging == true {
+                        Label("Charging", systemImage: "bolt.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else if bleVM.remoteUSBConnected == true {
+                        Text("USB connected · not charging")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack {
+                        Button(role: .destructive) {
+                            bleVM.disconnect()
+                        } label: {
+                            Text("Disconnect Button")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.red)
+                                .padding(.horizontal, 14)
+                                .frame(height: 36)
+                                .background(Color.red.opacity(0.08), in: Capsule())
+                                .frame(height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer(minLength: 0)
+                    }
+                }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-            }
 
-            Text(statusDetail)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let commandError = bleVM.commandError {
-                HStack(alignment: .top, spacing: 8) {
-                    Label(commandError, systemImage: "exclamationmark.triangle.fill")
-                        .font(.footnote)
-                        .foregroundStyle(Color.crimsonBlaze)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Spacer(minLength: 0)
-
-                    Button("OK") {
-                        bleVM.dismissCommandError()
+                Button {
+                    buttonEducationSlide = 0
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.84)) {
+                        showingButtonInfo = true
                     }
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(Color.cosmosBlue)
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss button message")
-                }
-            }
+                } label: {
+                ZStack(alignment: .topTrailing) {
+                    Image("ClipItButtonProduct")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 112)
+                        .scaleEffect(isConnected ? 1 : (isProductPhotoPulsing ? 1.07 : 0.95))
 
-// Conditional statements with helpful print statements based on clip transfer
-//            if let transferStatus = bleVM.lastClipTransferStatus {
-//                Text("Clip transfer: \(transferStatus)")
-//                    .font(.footnote)
-//                    .foregroundStyle(.secondary)
-//                    .fixedSize(horizontal: false, vertical: true)
-//            }
-//
-//            if let pending = bleVM.pendingButtonClips, isConnected {
-//                Text(pending == 0
-//                     ? "Button clip queue is clear."
-//                     : "Button has \(pending) clip \(pending == 1 ? "tap" : "taps") awaiting acknowledgment.")
-//                    .font(.footnote)
-//                    .foregroundStyle(pending == 0 ? Color.secondary : Color.crimsonBlaze)
-//                    .fixedSize(horizontal: false, vertical: true)
-//            }
-
-            if isConnected {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.08))
-                    .frame(height: 1)
-
-                HStack(spacing: 12) {
-                    if let batteryLevel = bleVM.remoteBatteryLevel {
-                        Image(systemName: batteryIcon(for: batteryLevel))
-                            .font(.system(size: 22))
-                            .foregroundStyle(batteryColor(for: batteryLevel))
-                            .frame(width: 32)
-                    } else {
-                        ProgressView()
-                            .tint(.blueMarble)
-                            .frame(width: 32)
-                    }
-
-                    Text("Button battery")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-
-                    Spacer()
-
-                    Text(bleVM.remoteBatteryLevel.map { "\($0)%" } ?? "Checking…")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                    Image(systemName: "questionmark.circle.fill")
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Color.cosmosBlue)
+                        .padding(3)
+                        .background(Color(UIColor.secondarySystemGroupedBackground), in: Circle())
+                        .accessibilityHidden(true)
                 }
-                .accessibilityElement(children: .combine)
-
-                if bleVM.remoteBatteryCharging == true {
-                    Label("Charging", systemImage: "bolt.fill")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else if bleVM.remoteUSBConnected == true {
-                    Text("USB connected · not charging")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack {
-                    Spacer()
-                    Button(role: .destructive) {
-                        bleVM.disconnect()
-                    } label: {
-                        Text("Disconnect Button")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 14)
-                            .frame(height: 36)
-                            .background(Color.red.opacity(0.08), in: Capsule())
-                            .frame(height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
+                .frame(width: 118, alignment: .top)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Learn about the ClipIt Button")
+            .accessibilityHint("Opens information about the physical ClipIt Button")
             }
         }
         .padding(22)
@@ -563,28 +594,138 @@ struct BLEDeviceView: View {
     }
 
     private var settingsCard: some View {
-        Toggle(isOn: Binding(
-            get: { bleVM.autoReconnect },
-            set: { enabled in
-                bleVM.setAutoReconnect(enabled)
-            }
-        )) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Auto-reconnect")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: 9) {
+            Toggle(isOn: Binding(
+                get: { bleVM.autoReconnect },
+                set: { enabled in
+                    bleVM.setAutoReconnect(enabled)
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Auto-reconnect")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.primary)
 
-                Text("Automatically recconect to your ClipIt Button.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    Text("Automatically reconnect to your ClipIt Button after turning off.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .tint(.crimsonBlaze)
+            .padding(18)
+            .background(
+                Color(UIColor.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 18)
+            )
+
+            Text("A ClipIt Button is optional. You can also use the on-screen ClipIt button as you Record.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+        }
+    }
+
+    private var buttonEducationWindow: some View {
+        ZStack {
+            Color.black.opacity(0.42)
+                .ignoresSafeArea()
+                .transition(.opacity)
+
+            GeometryReader { geometry in
+                let compactHeight = geometry.size.height < 700
+                let veryCompactHeight = geometry.size.height < 500
+                let artworkHeight: CGFloat = veryCompactHeight ? 105 : (compactHeight ? 160 : 410)
+                let slideshowHeight: CGFloat = veryCompactHeight ? 215 : (compactHeight ? 290 : 520)
+                let windowHeight = min(
+                    geometry.size.height - 40,
+                    veryCompactHeight ? 320 : (compactHeight ? 410 : 650)
+                )
+
+                ZStack(alignment: .topTrailing) {
+                    VStack(spacing: compactHeight ? 8 : 14) {
+                        TabView(selection: $buttonEducationSlide) {
+                            ForEach(Array(buttonEducationSlides.enumerated()), id: \.offset) { index, slide in
+                                Image(slide.image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: artworkHeight)
+                                    .frame(maxWidth: .infinity)
+                                    .clipShape(RoundedRectangle(cornerRadius: compactHeight ? 16 : 22, style: .continuous))
+                                    .padding(.horizontal, 2)
+                                    .tag(index)
+                            }
+                        }
+                        .tabViewStyle(.page(indexDisplayMode: .never))
+                        .frame(height: artworkHeight)
+
+                        HStack(spacing: 7) {
+                            ForEach(buttonEducationSlides.indices, id: \.self) { index in
+                                Circle()
+                                    .fill(index == buttonEducationSlide ? Color.crimsonBlaze : Color.crimsonBlaze.opacity(0.28))
+                                    .frame(width: index == buttonEducationSlide ? 9 : 7, height: index == buttonEducationSlide ? 9 : 7)
+                            }
+                        }
+                        .frame(height: compactHeight ? 12 : 16)
+                        .accessibilityLabel("Tutorial step \(buttonEducationSlide + 1) of \(buttonEducationSlides.count)")
+
+                        Text(buttonEducationSlides[buttonEducationSlide].detail)
+                            .font(compactHeight ? .footnote : .subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(height: slideshowHeight - artworkHeight - (compactHeight ? 20 : 28), alignment: .top)
+
+                        Link(destination: URL(string: "https://www.clipitbutton.com/products")!) {
+                            HStack(spacing: 8) {
+                                Image("ClipItButtonProduct")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 48, height: 52)
+                                    .accessibilityHidden(true)
+
+                                Text("Shop ClipIt Button")
+                                Image(systemName: "arrow.up.right")
+                            }
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(Color.cosmosBlue)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: compactHeight ? 50 : 62)
+                                .background(Color.yellow, in: Capsule())
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, compactHeight ? 14 : 24)
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            showingButtonInfo = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 25, weight: .semibold))
+                            .foregroundStyle(Color.secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 5)
+                    .padding(.trailing, 5)
+                    .accessibilityLabel("Close ClipIt Button information")
+                }
+                .frame(maxWidth: min(560, geometry.size.width - 32), minHeight: windowHeight, maxHeight: windowHeight)
+                .background(Color(red: 0.99, green: 0.975, blue: 0.92), in: RoundedRectangle(cornerRadius: 28))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 28)
+                        .strokeBorder(Color.blueMarble.opacity(0.18), lineWidth: 1)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .tint(.crimsonBlaze)
-        .padding(18)
-        .background(
-            Color(UIColor.secondarySystemGroupedBackground),
-            in: RoundedRectangle(cornerRadius: 18)
-        )
+        .transition(.asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.88)),
+            removal: .opacity.combined(with: .scale(scale: 0.96))
+        ))
+        .zIndex(20)
     }
 
     private func signalDescription(for rssi: Int) -> String {
@@ -852,7 +993,7 @@ struct SettingsView: View {
                 .alert("Original Video Auto-Delete", isPresented: $showOriginalVideoInfo) {
                     Button("OK", role: .cancel) { }
                 } message: {
-                    Text("Need more storage space? Choose how you'd like to manage your Original Videos. Deleting them automatically saves device space, while your other clips will stay saved in your gallery.")
+                    Text("Choose how you'd like the app to manage your large Original Videos. Deleting them automatically saves device space, while your other clips will stay saved in your gallery. Just remember you will lose the ability to edit individual clips when their Original Video is deleted!")
                 }
                 
                 Section("Bluetooth") {
