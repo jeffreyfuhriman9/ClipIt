@@ -177,8 +177,8 @@ function setupReviewForm() {
   const error = form.querySelector("[data-review-error]");
   const success = form.querySelector("[data-review-success]");
 
-  fileInput.addEventListener("change", () => {
-    descriptions.replaceChildren();
+  fileInput?.addEventListener("change", () => {
+    descriptions?.replaceChildren();
     const files = Array.from(fileInput.files || []);
     if (files.length > 5) {
       error.textContent = "You can upload up to five photos or videos.";
@@ -196,7 +196,7 @@ function setupReviewForm() {
       input.required = true;
       input.placeholder = "Describe what is shown or heard";
       label.append(input);
-      descriptions.append(label);
+      descriptions?.append(label);
     });
   });
 
@@ -205,7 +205,7 @@ function setupReviewForm() {
     error.hidden = true;
     success.hidden = true;
     if (!form.reportValidity()) return;
-    const files = Array.from(fileInput.files || []);
+    const files = Array.from(fileInput?.files || []);
     const invalidFile = files.find((file) => {
       const image = /^(image\/jpeg|image\/png|image\/webp)$/.test(file.type);
       const video = /^(video\/mp4|video\/webm)$/.test(file.type);
@@ -227,7 +227,7 @@ function setupReviewForm() {
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "We could not publish your review. Please try again.");
       form.reset();
-      descriptions.replaceChildren();
+      descriptions?.replaceChildren();
       success.hidden = false;
       button.hidden = true;
     } catch (requestError) {

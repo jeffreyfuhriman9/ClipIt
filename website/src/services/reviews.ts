@@ -47,6 +47,7 @@ export class ReviewStore {
   }
 
   private async getS3() {
+    if (!this.config.media) throw new ReviewValidationError("Photo and video uploads are not enabled.");
     // Do not load the large AWS SDK during ordinary storefront startup. Reviews
     // are optional, and this keeps browsing/checkout independent of media storage.
     this.s3Module ??= import("@aws-sdk/client-s3");
@@ -151,6 +152,9 @@ export class ReviewStore {
     const claim = await this.claim(token);
     if (!claim) throw new ReviewClaimError("This review link is invalid, expired, or already used.");
     if (uploads.length > 5) throw new ReviewValidationError("You can upload up to five photos or videos.");
+    if (uploads.length && !this.config.media) {
+      throw new ReviewValidationError("Photo and video uploads are not enabled for reviews yet.");
+    }
     const prepared = [] as Array<{ key: string; url: string; kind: "image" | "video"; altText: string; buffer: Buffer; contentType: string }>;
     for (const upload of uploads) {
       const type = await fileTypeFromBuffer(upload.buffer);
@@ -162,10 +166,12 @@ export class ReviewStore {
         throw new ReviewValidationError("Uploads must be JPG, PNG, WebP, MP4, or WebM and within the stated size limits.");
       }
       const key = `reviews/${claim.productId}/${randomUUID()}.${allowed.extension}`;
-      prepared.push({ key, url: `${this.config.media.publicBaseUrl}/${key}`, kind: allowed.kind, altText: upload.altText, buffer: upload.buffer, contentType: type.mime });
+      prepared.push({ key, url: `${this.config.media!.publicBaseUrl}/${key}`, kind: allowed.kind, altText: upload.altText, buffer: upload.buffer, contentType: type.mime });
     }
-    const s3 = await this.getS3();
-    for (const item of prepared) await s3.client.send(new s3.PutObjectCommand({ Bucket: this.config.media.bucket, Key: item.key, Body: item.buffer, ContentType: item.contentType, CacheControl: "public, max-age=31536000, immutable" }));
+    if (prepared.length) {
+      const s3 = await this.getS3();
+      for (const item of prepared) await s3.client.send(new s3.PutObjectCommand({ Bucket: this.config.media!.bucket, Key: item.key, Body: item.buffer, ContentType: item.contentType, CacheControl: "public, max-age=31536000, immutable" }));
+    }
     await this.ensureSchema();
     const client = await this.pool.connect();
     try {

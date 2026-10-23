@@ -98,7 +98,9 @@ export type AppConfig = {
   };
   reviews?: {
     databaseUrl: string;
-    media: {
+    // Media storage is optional. A database-only setup supports verified star and
+    // text reviews without asking a small store to operate an object-storage bucket.
+    media?: {
       bucket: string;
       region: string;
       endpoint: string;
@@ -163,16 +165,18 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     );
   }
 
-  const reviewValues = [
-    parsed.data.DATABASE_URL,
+  const reviewMediaValues = [
     parsed.data.REVIEW_MEDIA_BUCKET,
     parsed.data.REVIEW_MEDIA_ENDPOINT,
     parsed.data.REVIEW_MEDIA_ACCESS_KEY_ID,
     parsed.data.REVIEW_MEDIA_SECRET_ACCESS_KEY,
     parsed.data.REVIEW_MEDIA_PUBLIC_BASE_URL
   ];
-  if (reviewValues.some(Boolean) && !reviewValues.every(Boolean)) {
-    throw new Error("Configure all DATABASE_URL and REVIEW_MEDIA_* values, or omit all of them to disable reviews.");
+  if (reviewMediaValues.some(Boolean) && !reviewMediaValues.every(Boolean)) {
+    throw new Error("Configure every REVIEW_MEDIA_* value together, or omit all of them for text-only reviews.");
+  }
+  if (reviewMediaValues.some(Boolean) && !parsed.data.DATABASE_URL) {
+    throw new Error("DATABASE_URL is required when REVIEW_MEDIA_* values are configured.");
   }
 
   return {
@@ -212,17 +216,19 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
           tabName: parsed.data.GOOGLE_SHEETS_TAB_NAME
         }
       : undefined,
-    reviews: reviewValues.every(Boolean)
+    reviews: parsed.data.DATABASE_URL
       ? {
           databaseUrl: parsed.data.DATABASE_URL!,
-          media: {
+          media: reviewMediaValues.every(Boolean)
+            ? {
             bucket: parsed.data.REVIEW_MEDIA_BUCKET!,
             region: parsed.data.REVIEW_MEDIA_REGION,
             endpoint: parsed.data.REVIEW_MEDIA_ENDPOINT!,
             accessKeyId: parsed.data.REVIEW_MEDIA_ACCESS_KEY_ID!,
             secretAccessKey: parsed.data.REVIEW_MEDIA_SECRET_ACCESS_KEY!,
             publicBaseUrl: parsed.data.REVIEW_MEDIA_PUBLIC_BASE_URL!.replace(/\/$/, "")
-          }
+            }
+            : undefined
         }
       : undefined
   };

@@ -16,9 +16,11 @@
       </div>
     </fieldset>
     <label>Review<textarea name="body" rows="7" required minlength="10" maxlength="5000"></textarea></label>
-    <label>Photos or videos (optional)<input data-review-media name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" multiple></label>
-    <p class="upload-help">Up to 5 files. Images: JPG, PNG, or WebP, up to 5 MB each. Videos: MP4 or WebM, up to 25 MB each. Add a short description for every upload.</p>
-    <div data-media-descriptions></div>
+    <% if (supportsMedia) { %>
+      <label>Photos or videos (optional)<input data-review-media name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" multiple></label>
+      <p class="upload-help">Up to 5 files. Images: JPG, PNG, or WebP, up to 5 MB each. Videos: MP4 or WebM, up to 25 MB each. Add a short description for every upload.</p>
+      <div data-media-descriptions></div>
+    <% } %>
     <label class="honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
     <p class="form-error" data-review-error hidden></p>
     <p class="form-success" data-review-success hidden>Thanks—your verified review is now published.</p>

@@ -162,7 +162,7 @@ export function createApp(dependencies: AppDependencies = {}) {
   const reviewStore = dependencies.reviewStore ?? createReviewStore(config);
   const orderStore = dependencies.orderStore ?? createOrderStore(config);
   const googleSheetsOrderStore = dependencies.googleSheetsOrderStore ?? createGoogleSheetsOrderStore(config);
-  const reviewMediaOrigin = config.reviews ? new URL(config.reviews.media.publicBaseUrl).origin : undefined;
+  const reviewMediaOrigin = config.reviews?.media ? new URL(config.reviews.media.publicBaseUrl).origin : undefined;
   const app = express();
 
   app.set("trust proxy", 1);
@@ -355,7 +355,12 @@ export function createApp(dependencies: AppDependencies = {}) {
         response.status(410).render("review-unavailable", { title: "Review link unavailable — ClipIt" });
         return;
       }
-      response.render("review-form", { title: `Review ${product.name} — ClipIt`, product, token });
+      response.render("review-form", {
+        title: `Review ${product.name} — ClipIt`,
+        product,
+        token,
+        supportsMedia: Boolean(config.reviews?.media)
+      });
     } catch (error) {
       next(error);
     }
@@ -489,7 +494,7 @@ export function createApp(dependencies: AppDependencies = {}) {
     message: { error: "Too many review attempts. Please try again later." }
   });
 
-  app.post("/api/reviews", reviewLimiter, reviewUpload.array("media", 5), async (request, response, next) => {
+  app.post("/api/reviews", reviewLimiter, reviewUpload.array("media", config.reviews?.media ? 5 : 0), async (request, response, next) => {
     if (!reviewStore) {
       response.status(503).json({ error: "Reviews are not configured yet." });
       return;
