@@ -69,8 +69,8 @@
       <span><%= reviewData.summary.count %> <%= reviewData.summary.count === 1 ? "review" : "reviews" %></span>
     </div>
     <div class="review-breakdown" aria-label="Rating breakdown">
-      <% [5, 4, 3, 2, 1].forEach((rating) => { const count = reviewData.summary.breakdown[rating]; const percent = reviewData.summary.count ? (count / reviewData.summary.count) * 100 : 0; %>
-        <div class="breakdown-row"><span><%= rating %> star</span><div class="breakdown-meter" aria-hidden="true"><i style="width: <%= percent %>%"></i></div><span><%= count %></span></div>
+      <% [5, 4, 3, 2, 1].forEach((rating) => { const count = reviewData.summary.breakdown[rating]; %>
+        <div class="breakdown-row"><span><%= rating %> star</span><progress class="breakdown-meter" max="<%= reviewData.summary.count || 1 %>" value="<%= count %>" aria-label="<%= rating %> star reviews: <%= count %> of <%= reviewData.summary.count %>"></progress><span><%= count %></span></div>
       <% }) %>
     </div>
   </div>

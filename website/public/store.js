@@ -228,8 +228,7 @@ function setupReviewForm() {
       if (!response.ok) throw new Error(result.error || "We could not publish your review. Please try again.");
       form.reset();
       descriptions?.replaceChildren();
-      success.hidden = false;
-      button.hidden = true;
+      window.location.assign("/reviews/thanks");
     } catch (requestError) {
       error.textContent = requestError instanceof Error ? requestError.message : "A network error occurred.";
       error.hidden = false;

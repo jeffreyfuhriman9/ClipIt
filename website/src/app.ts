@@ -366,6 +366,10 @@ export function createApp(dependencies: AppDependencies = {}) {
     }
   });
 
+  app.get("/reviews/thanks", (_request, response) => {
+    response.render("review-thanks", { title: "Thank you for your review — ClipIt" });
+  });
+
   const checkoutLimiter = rateLimit({
     windowMs: 60_000,
     limit: config.nodeEnv === "test" ? 1_000 : 15,

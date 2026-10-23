@@ -20,7 +20,7 @@ type ValuesResponse = { values?: string[][] };
 type AppendResponse = { updates?: { updatedRange?: string } };
 
 const headers = [
-  "Stripe checkout session", "Paid at (UTC)", "Customer name", "Customer email", "Shipping address", "Items", "Quantity", "Total",
+  "Stripe checkout session", "Paid at (Mountain Time)", "Customer name", "Customer email", "Shipping address", "Items", "Quantity", "Total",
   "Payment confirmed", "Packed", "Label printed", "Shipped", "Tracking number", "Customer notified", "Notes"
 ];
 
@@ -41,6 +41,21 @@ function formatAddress(order: SheetOrder) {
 function formatTotal(amount: number | null, currency: string | null) {
   if (amount === null || !currency) return "";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(amount / 100);
+}
+
+function formatPaidAt(date: Date) {
+  // America/Denver automatically displays MDT or MST as daylight saving changes.
+  // Store a readable local time so fulfillment does not require manual UTC conversion.
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Denver",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZoneName: "short"
+  }).format(date);
 }
 
 /**
@@ -114,6 +129,12 @@ export class GoogleSheetsOrderStore {
       await this.request(this.spreadsheetUrl(`/values/${this.range("A1:O1")}?valueInputOption=RAW`), {
         method: "PUT", body: JSON.stringify({ values: [headers] })
       });
+    } else if (existing.values[0][1] === "Paid at (UTC)") {
+      // Update the header of the existing ClipIt fulfillment sheet once, while
+      // leaving any user-added columns or labels untouched.
+      await this.request(this.spreadsheetUrl(`/values/${this.range("B1")}?valueInputOption=RAW`), {
+        method: "PUT", body: JSON.stringify({ values: [[headers[1]]] })
+      });
     }
 
     return sheet.sheetId;
@@ -148,7 +169,7 @@ export class GoogleSheetsOrderStore {
     const appended = await this.request<AppendResponse>(this.spreadsheetUrl(`/values/${this.range("A:O")}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`), {
       method: "POST",
       body: JSON.stringify({ values: [[
-        order.sessionId, new Date().toISOString(), order.customerName ?? "", order.customerEmail, formatAddress(order), items, quantity,
+        order.sessionId, formatPaidAt(new Date()), order.customerName ?? "", order.customerEmail, formatAddress(order), items, quantity,
         formatTotal(order.amountTotal, order.currency), true, false, false, false, "", false, ""
       ]] })
     });

@@ -197,8 +197,10 @@ h3 { font-size: 1.35rem; }
 .star-display > span { color: var(--ink-soft); opacity: .6; }
 .review-breakdown { display: grid; gap: 8px; }
 .breakdown-row { display: grid; grid-template-columns: 48px 1fr 28px; gap: 10px; align-items: center; color: var(--ink-soft); font-size: .82rem; }
-.breakdown-meter { overflow: hidden; height: 8px; border-radius: 999px; background: var(--meter-track); }
-.breakdown-meter i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.breakdown-meter { width: 100%; height: 8px; overflow: hidden; border: 0; border-radius: 999px; background: var(--meter-track); color: var(--accent); }
+.breakdown-meter::-webkit-progress-bar { background: var(--meter-track); border-radius: inherit; }
+.breakdown-meter::-webkit-progress-value { background: var(--accent); border-radius: inherit; }
+.breakdown-meter::-moz-progress-bar { background: var(--accent); border-radius: inherit; }
 .no-reviews { padding: 26px; border-left: 3px solid var(--accent); background: var(--paper); color: var(--ink-soft); }
 .verified-review-list { display: grid; gap: 18px; }
 .verified-review { padding: 28px; border-radius: 18px; background: var(--paper); box-shadow: 0 1px 0 var(--line); }
