@@ -574,7 +574,7 @@ struct BLEDeviceView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.primary)
 
-                Text("Your ClipIt Button will automatically reconnect whenever you open the app.")
+                Text("Automatically recconect to your ClipIt Button.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

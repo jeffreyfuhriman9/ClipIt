@@ -157,15 +157,19 @@ struct FAQView: View {
     private let faqs: [FAQItem] = [
         FAQItem(
             question: "How does ClipIt work?",
-            answer: "ClipIt works just like your phone camera except you are your own instant highlight broadcaster! When you tap the on screen 'ClipIt' button, or through our bluetooth ClipIt Button, the preceding seconds, ranging from 5s to 60s, are instantly saved into a standalone highlight clip. Your original video is also saved in case you missed a moment and need to save a new video clip or you want to edit a highlight afterwards to make it shorter or longer."
+            answer: "ClipIt works as your own instant highlight broadcaster! Start by hitting record and each time you tap the ClipIt Button, timestamps are saved. When finished, hit the stop recording button and your ClipIt timestamps are instantly saved into standalone highlight clips! The original video from start to finish is also saved to enable editing a highlight clip or to 'save as a new clip' afterwards."
+        ),
+        FAQItem(
+            question: "What's the difference between clip types (Highlights, Reels, & Original Videos?",
+            answer: "The Original Video is the source of truth, where highlights are made. Highlights are the individual clips made from the preceding seconds of a ClipIt button press. Reels are highlights stitched together into one video, like a highlight reel!"
         ),
         FAQItem(
             question: "How do I pair a the ClipIt BlueTooth Button?",
-            answer: "Ensure your Bluetooth ClipIt Button is turned on by sliding the slide switch on the side of the device up or down. Navigate to the Device screen and, if not already connected, press 'Scan Nearby Devices'. Once connected, pressing the small button toggles start/stop recordng and the larger button triggers a ClipIt highlight instantly."
+            answer: "Turn device Bluetooth on. Ensure your Bluetooth ClipIt Button is turned on by sliding the slide switch on the side of the device. You should see the blue light blinking. Navigate to the Device screen and find your nearby button. Once connected, pressing the small button toggles start/stop recordng and the larger button triggers a ClipIt highlight instantly."
         ),
         FAQItem(
             question: "I'm running out of storage, how do I free up more space on my device?",
-            answer: "Raw Original Videos use the most storage. Once you’ve saved or edited your highlights, you can safely delete the Original Video from a session—your highlight clips will remain saved. To use less space going forward, you can also lower your Highlight Length or reduce Video Quality (e.g., from 4K to 1080p or 720p) in Settings."
+            answer: "Original Videos use the most storage since it's the film from start to finish. Once you’ve edited your highlights, you can safely delete the Original Video from a session. Your highlight clips will remain saved. To use less space going forward, you can also lower your Highlight Length or reduce Video Quality (e.g., from 4K to 1080p or 720p) in Settings."
         ),
         FAQItem(
             question: "What happens if I receive a phone call while recording?",
@@ -173,7 +177,7 @@ struct FAQView: View {
         ),
         FAQItem(
             question: "How do I change the highlight buffer duration?",
-            answer: "On the Record screen, tap the gear icon to open Camera Controls. Use the slider or quick-select buttons to adjust the buffer length between 5 and 60 seconds. You can also find the ClipIt Highlight Length in Settings."
+            answer: "On the Record screen, tap the red circle icon in the bottom left. Use the slider or quick-select buttons to adjust the buffer length between 5 and 60 seconds. You can also find the ClipIt Highlight Length in Settings."
         ),
         FAQItem(
             question: "Where are my saved clips stored?",
@@ -181,7 +185,7 @@ struct FAQView: View {
         ),
         FAQItem(
             question: "Can I save or share a highlight outside of ClipIt?",
-            answer: "Yes! Hit the 'select' button in the ClipIt gallery to select multiple, or tap the share icon on any clip to export it to your iPhone's Photos library. You can also send it directly via AirDrop or Messages, or post it straight to platforms like Instagram or TikTok. ClipIt stays your dedicated, organized home for every highlight. Sharing or saving a copy elsewhere is always your choice, clip by clip, whenever you want it."
+            answer: "Yes! Hit the 'select' button in the ClipIt gallery to select multiple, or tap the share icon inside any clip to export the video(s). You can also send it directly via AirDrop or Messages, or post it straight to platforms like Instagram, YouTube, and TikTok. ClipIt is designed to be your dedicated, organized home for sports film."
         ),
         FAQItem(
             question: "What does 'Dim Screen While Recording' do?",

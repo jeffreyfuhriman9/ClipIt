@@ -10,9 +10,9 @@ export const products: Product[] = [
     id: "clipit-button-placeholder",
     slug: "clipit-button",
     name: "The ClipIt Button",
-    shortDescription: "Your instant highlight creator made simply through a button press.",
+    shortDescription: "Your instant sports highlight creator made simply through a button press.",
     description:
-      "The ultimate sports enthusiast accessory - The ClipIt Button. Allows parents, athletes, and coaches to keep their head in the game while also gathering their favorite highlights!",
+      "The ultimate sports enthusiast accessory - The ClipIt Button - allowing parents, athletes, and coaches to keep their head in the game while also gathering their favorite highlights!",
     priceCents: 3999,
     currency: "usd",
     image: "/images/button1pf.png",
@@ -25,9 +25,10 @@ export const products: Product[] = [
       { src: "/images/button2pf.png", alt: "ClipIt Button back view" }
     ],
     features: [
-      "Pair The ClipIt Button with the ClipIt companion app available on iOS and Android and start capturing your favorite clips.",
-      "Up to 60+ ft of Bluetooth range",
-      "USB-C charging"
+      "Pair The ClipIt Button with the ClipIt companion app available on iOS and Android.",
+      "Connects to your mobile device via Bluetooth",
+      "No range limits - take your button anywhere while enjoying the game!",
+      "Rechargeable battery through USB-C (USB-C cord not included)"
     ],
     active: true,
     requiresShipping: true
@@ -35,8 +36,8 @@ export const products: Product[] = [
   {
     id: "clipit-bundle-placeholder",
     slug: "clipit-bundle",
-    name: "The ClipIt Button & Tripod Bundle",
-    shortDescription: "Get the full setup now to start clipping your favorite moments.",
+    name: "The ClipIt Starter Bundle",
+    shortDescription: "Bundle and get the full setup including the ClipIt Button and Tripod.",
     description:
       "Stop watching the game through your phone. Set up the tripod, hit record, and simply just hit that ClipIt Button included in this bundle!",
     priceCents: 7999,
