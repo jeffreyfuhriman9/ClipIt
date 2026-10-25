@@ -145,12 +145,12 @@ function setupContactForm() {
     event.preventDefault();
     error.hidden = true;
     success.hidden = true;
+    if (!form.reportValidity()) return;
     button.disabled = true;
     button.textContent = "Sending…";
-    if (!form.reportValidity()) return;
     const attachments = Array.from(attachmentInput?.files || []);
     const invalidAttachment = attachments.find((file) =>
-      !/^(image\\/(jpeg|png|webp)|application\\/pdf)$/.test(file.type) || file.size > 5 * 1024 * 1024
+      !/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(file.type) || file.size > 5 * 1024 * 1024
     );
     if (attachments.length > 3 || invalidAttachment) {
       error.textContent = "Attach up to three JPG, PNG, WebP, or PDF files. Each file can be up to 5 MB.";
